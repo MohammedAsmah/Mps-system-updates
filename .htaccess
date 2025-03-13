@@ -1,0 +1,7 @@
+RewriteEngine On
+RewriteBase /MP5_UDATED_VERSION/
+
+# Exclude existing files/directories from rewriting
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^ home.php [L]
