@@ -146,6 +146,8 @@ try {
     <?php include 'add_user.php'; ?>
 </div>
 
+
+
 <div id="editUserFormContainer" style="display: none;"></div>
 
 <script>
@@ -166,32 +168,96 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
 
-    // Load edit form
-    window.cancelEdit = function() {
-    document.getElementById('editUserFormContainer').style.display = 'none';
-    document.getElementById('userTableContainer').style.display = 'block';
-};
-    window.loadEditForm = function(userId) {
-    const baseUrl = window.location.origin + '/mps_udated_version/'; // Correct project name
-    const absoluteUrl = `${baseUrl}home.php?section=users&item=update_user&id=${userId}&partial=1`;
-    
-    console.log('Request URL:', absoluteUrl); // Debug
-    
-    fetch(absoluteUrl)
-        .then(response => {
-            if (!response.ok) throw new Error(`HTTP ${response.status}`);
-            return response.text();
-        })
-        .then(html => {
-            document.getElementById('editUserFormContainer').innerHTML = html;
-            document.getElementById('editUserFormContainer').style.display = 'block';
-            document.getElementById('userTableContainer').style.display = 'none';
-        })
-        .catch(error => {
-            console.error('Fetch Error:', error);
-            alert(`Failed to load form: ${error.message}`);
+    // Add form submission handler
+    const addUserForm = document.querySelector('#addUserFormContainer form');
+    if (addUserForm) {
+        addUserForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            const formData = new FormData(this);
+
+            // Add header to identify as AJAX request
+            fetch('content/users/add_user.php', {
+                method: 'POST',
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                body: formData
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Network response was not ok');
+                }
+                return response.text().then(text => {
+                    try {
+                        return JSON.parse(text);
+                    } catch (e) {
+                        console.error('Response:', text);
+                        throw new Error('Invalid JSON response');
+                    }
+                });
+            })
+            .then(data => {
+                if (data.success) {
+                    const messageDiv = document.createElement('div');
+                    messageDiv.className = 'bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded mb-4';
+                    messageDiv.textContent = data.message || 'Utilisateur créé avec succès';
+                    addUserForm.prepend(messageDiv);
+                    
+                    setTimeout(() => {
+                        window.location.reload();
+                    }, 2000);
+                } else {
+                    const messageDiv = document.createElement('div');
+                    messageDiv.className = 'bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4';
+                    messageDiv.textContent = data.error || 'Une erreur est survenue';
+                    
+                    const existingError = addUserForm.querySelector('.error-message');
+                    if (existingError) {
+                        existingError.remove();
+                    }
+                    
+                    messageDiv.classList.add('error-message');
+                    addUserForm.prepend(messageDiv);
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                const messageDiv = document.createElement('div');
+                messageDiv.className = 'bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4 error-message';
+                messageDiv.textContent = 'Erreur lors de la création: ' + error.message;
+                
+                const existingError = addUserForm.querySelector('.error-message');
+                if (existingError) {
+                    existingError.remove();
+                }
+                
+                addUserForm.prepend(messageDiv);
+            });
         });
-};
+    }
+
+    // Load edit form
+    window.loadEditForm = function(userId) {
+        const baseUrl = window.location.origin + '/mps_udated_version/'; // Correct project name
+        const absoluteUrl = `${baseUrl}home.php?section=users&item=update_user&id=${userId}&partial=1`;
+        
+        console.log('Request URL:', absoluteUrl); // Debug
+        
+        fetch(absoluteUrl)
+            .then(response => {
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                return response.text();
+            })
+            .then(html => {
+                document.getElementById('editUserFormContainer').innerHTML = html;
+                document.getElementById('editUserFormContainer').style.display = 'block';
+                document.getElementById('userTableContainer').style.display = 'none';
+            })
+            .catch(error => {
+                console.error('Fetch Error:', error);
+                alert(`Failed to load form: ${error.message}`);
+            });
+    };
 
     // Cancel edit
     window.cancelEdit = function() {
@@ -199,5 +265,55 @@ document.addEventListener('DOMContentLoaded', function() {
         userTableContainer.style.display = 'block';
         window.location.reload(); // Refresh to get updated data
     };
+
+    // ================================================================
+    // FORM SUBMISSION HANDLER
+    // ================================================================
+    document.querySelector('#editUserFormContainer')?.addEventListener('submit', function(e) {
+        e.preventDefault();
+        const form = e.target;
+        const formData = new FormData(form);
+        const userId = form.querySelector('input[name="id"]').value;
+
+        fetch(`home.php?section=Utulisateurs/Groups&item=update_user&id=${userId}`, {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => {
+            if (!response.ok) throw new Error('Network response was not ok');
+            return response.json();
+        })
+        .then(data => {
+            // Hide the form and show the table immediately
+            document.getElementById('editUserFormContainer').style.display = 'none';
+            document.getElementById('userTableContainer').style.display = 'block';
+
+            // Create success message div
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded mb-4';
+            messageDiv.textContent = 'Utilisateur mis à jour avec succès';
+            
+            // Insert message at the top of the container
+            const container = document.querySelector('.container');
+            container.insertBefore(messageDiv, container.firstChild);
+            
+            // Remove message and reload page after 2 seconds
+            setTimeout(() => {
+                messageDiv.remove();
+                window.location.reload();
+            }, 2000);
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4';
+            messageDiv.textContent = 'Erreur lors de la mise à jour: ' + error.message;
+            
+            const container = document.querySelector('.container');
+            container.insertBefore(messageDiv, container.firstChild);
+            
+            setTimeout(() => messageDiv.remove(), 3000);
+        });
+    });
 });
 </script>
