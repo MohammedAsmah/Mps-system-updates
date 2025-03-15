@@ -1,10 +1,7 @@
 <?php
+// This should be at the top of home.php
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_GET['item']) && $_GET['item'] === 'add_user') {
     include __DIR__ . '/content/users/add_user.php';
-    exit();
-}
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_GET['item']) && $_GET['item'] === 'update_user') {
-    include __DIR__ . '/content/users/update_user.php';
     exit();
 }
 // Handle update_user requests immediately
@@ -222,7 +219,6 @@ if ($currentItem && isset($sidebar[$currentItem])) {
                                 </a>
                             </li>
                         <?php endforeach; ?>
-                        <li><a href="content\users\update_user.php">click me </a> </li>
                     </ul>
                 </nav>
             </aside>

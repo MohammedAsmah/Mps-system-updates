@@ -34,13 +34,24 @@ try {
 
 // Handle form submission
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    // Reset any previous messages
+    $response['success'] = false;
+    $response['error'] = null;
+    $response['message'] = '';
     try {
         // Validate inputs
         $requiredFields = ['first_name', 'last_name', 'login', 'email', 'password'];
         foreach ($requiredFields as $field) {
             if (empty($_POST[$field])) {
-                throw new Exception("Le champ '$field' est requis");
+                throw new Exception("Le champ '".ucfirst(str_replace('_', ' ', $field))."' est obligatoire.");
             }
+        }
+
+        // Check if login already exists
+        $checkLogin = $conn->prepare("SELECT COUNT(*) FROM rs_users WHERE login = ?");
+        $checkLogin->execute([$_POST['login']]);
+        if ($checkLogin->fetchColumn() > 0) {
+            throw new Exception("Ce login est déjà utilisé. Veuillez en choisir un autre.");
         }
 
         // Hash password
@@ -50,14 +61,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $stmt = $conn->prepare("INSERT INTO rs_users (first_name, last_name, login, email, password) VALUES (?, ?, ?, ?, ?)");
         $stmt->execute([$_POST['first_name'], $_POST['last_name'], $_POST['login'], $_POST['email'], $hashedPassword]);
 
-        $response['success'] = true;
-        $response['message'] = "Utilisateur créé avec succès";
+        if ($stmt->rowCount() > 0) {
+            $userId = $conn->lastInsertId();
+            
+            // Process groups
+            if (!empty($_POST['groups']) && is_array($_POST['groups'])) {
+                $groupStmt = $conn->prepare("INSERT INTO user_groups (user_id, group_id) VALUES (?, ?)");
+                foreach ($_POST['groups'] as $groupId) {
+                    $groupStmt->execute([$userId, $groupId]);
+                }
+            }
+            
+            $response['success'] = true;
+            $response['message'] = "L'utilisateur a été créé avec succès!";
+            $response['error'] = null; // Clear any existing error message
+        }
+    } catch (PDOException $e) {
+        $response['success'] = false;
+        $response['error'] = "Une erreur est survenue lors de la création de l'utilisateur. Veuillez réessayer.";
+        if ($e->getCode() == 23000) { // Duplicate entry error
+            $response['error'] = "Cette adresse email est déjà utilisée. Veuillez en utiliser une autre.";
+        }
     } catch (Exception $e) {
         $response['error'] = $e->getMessage();
     }
 
-    // Always return JSON for AJAX requests
-    header('Content-Type: application/json');
+    // Return JSON response immediately
     echo json_encode($response);
     exit();
 }
@@ -78,11 +107,15 @@ if (empty($_SERVER['HTTP_X_REQUESTED_WITH']) || strtolower($_SERVER['HTTP_X_REQU
         <h1 class="text-2xl font-bold mb-6">Ajouter un Utilisateur</h1>
 
         <form method="POST" class="bg-white p-6 rounded shadow-md" id="addUserForm">
-            <?php if ($response['error']): ?>
-                <div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4 alert-message">
-                    <?= htmlspecialchars($response['error']) ?>
-                </div>
-            <?php endif; ?>
+<?php if ($response['success']): ?>
+    <div class="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded mb-4 alert-message">
+        <?= htmlspecialchars($response['message']) ?>
+    </div>
+<?php elseif ($response['error']): ?>
+    <div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4 alert-message">
+        <?= htmlspecialchars($response['error']) ?>
+    </div>
+<?php endif; ?>
 
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div class="mb-4">
@@ -91,7 +124,6 @@ if (empty($_SERVER['HTTP_X_REQUESTED_WITH']) || strtolower($_SERVER['HTTP_X_REQU
                         class="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-400"
                         value="<?= htmlspecialchars($response['fields']['first_name']) ?>">
                 </div>
-
                 <div class="mb-4">
                     <label class="block text-gray-700 text-sm font-bold mb-2">Nom</label>
                     <input type="text" name="last_name" required
