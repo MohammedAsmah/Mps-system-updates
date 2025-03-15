@@ -176,26 +176,26 @@ document.addEventListener('DOMContentLoaded', function() {
             const formData = new FormData(this);
 
             // Add header to identify as AJAX request
-            fetch('content/users/add_user.php', {
-                method: 'POST',
-                headers: {
-                    'X-Requested-With': 'XMLHttpRequest'
-                },
-                body: formData
-            })
-            .then(response => {
-                if (!response.ok) {
-                    throw new Error('Network response was not ok');
-                }
-                return response.text().then(text => {
-                    try {
-                        return JSON.parse(text);
-                    } catch (e) {
-                        console.error('Response:', text);
-                        throw new Error('Invalid JSON response');
-                    }
-                });
-            })
+            fetch('home.php?section=users&item=add_user', {
+    method: 'POST',
+    headers: {
+        'X-Requested-With': 'XMLHttpRequest'
+    },
+    body: formData
+})
+.then(response => {
+    if (!response.ok) {
+        throw new Error('Network response was not ok');
+    }
+    return response.text().then(text => {
+        try {
+            return JSON.parse(text);
+        } catch (e) {
+            console.error('Response:', text);
+            throw new Error('Invalid JSON response');
+        }
+    });
+})
             .then(data => {
                 if (data.success) {
                     const messageDiv = document.createElement('div');
@@ -315,5 +315,10 @@ document.addEventListener('DOMContentLoaded', function() {
             setTimeout(() => messageDiv.remove(), 3000);
         });
     });
+    // Add this to your script in liste_users.php
+window.cancelAdd = function() {
+    document.getElementById('addUserFormContainer').style.display = 'none';
+    document.getElementById('userTableContainer').style.display = 'block';
+};
 });
 </script>
