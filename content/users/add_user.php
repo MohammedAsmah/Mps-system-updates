@@ -102,6 +102,9 @@ if (empty($_SERVER['HTTP_X_REQUESTED_WITH']) || strtolower($_SERVER['HTTP_X_REQU
     <title>Ajouter un Utilisateur</title>
     <script src="https://cdn.tailwindcss.com"></script>
 </head>
+<style>
+            input[type="checkbox"] {
+                cursor: pointer;} </style>
 <body class="bg-gray-100">
     <div class="container mx-auto p-6">
         <h1 class="text-2xl font-bold mb-6">Ajouter un Utilisateur</h1>

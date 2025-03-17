@@ -1,73 +1,72 @@
 <?php
-
-header('Content-Type: application/json');
+// Start session and include DB connection
 session_start();
 include 'db_connect.php';
 
-// Initialize variables
-$error = null;
-$success = null;
-$group = null;
-$groupMenus = [];
-$allMenus = [];
+// Check permissions
+if (!isset($_SESSION['user_id'])) {
+    header('Location: index.php?error=Please+log+in');
+    exit();
+}
+
+// Get fresh admin status from database
+$stmt = $conn->prepare("
+    SELECT u.is_admin, u.is_superadmin, MAX(g.is_supergroup) as is_supergroup 
+    FROM rs_users u
+    LEFT JOIN user_groups ug ON u.user_id = ug.user_id
+    LEFT JOIN rs_groups g ON ug.group_id = g.group_id
+    WHERE u.user_id = ?
+");
+$stmt->execute([$_SESSION['user_id']]);
+$user = $stmt->fetch(PDO::FETCH_ASSOC);
+
+$is_admin = $user['is_admin'] || $user['is_superadmin'] || $user['is_supergroup'];
+
+if (!$is_admin) {
+    header('HTTP/1.1 403 Forbidden');
+    die(json_encode(['error' => 'Accès non autorisé']));
+}
+
+// Handle AJAX partial request
+$isPartial = isset($_GET['partial']) && $_GET['partial'] == '1';
+
+// Get group ID
+$groupId = isset($_GET['id']) ? (int)$_GET['id'] : 0;
 
 try {
-    // Validate group ID
-    $groupId = $_GET['id'] ?? null;
-    if (!$groupId || !is_numeric($groupId)) {
-        throw new Exception("ID de groupe invalide");
-    }
-
     // Fetch group data
     $stmt = $conn->prepare("SELECT * FROM rs_groups WHERE group_id = ?");
     $stmt->execute([$groupId]);
     $group = $stmt->fetch(PDO::FETCH_ASSOC);
-
+    
     if (!$group) {
-        throw new Exception("Groupe non trouvé");
+        header('HTTP/1.1 404 Not Found');
+        die("Groupe non trouvé");
     }
 
-    // Get existing permissions
-    $groupMenus = $conn->query("
-        SELECT gm.menu_id, 
-        GROUP_CONCAT(ge.element_id) AS elements
-        FROM group_menus gm
-        LEFT JOIN group_elements ge ON gm.group_id = ge.group_id AND gm.menu_id = ge.menu_id
-        WHERE gm.group_id = $groupId
-        GROUP BY gm.menu_id
-    ")->fetchAll(PDO::FETCH_KEY_PAIR);
-
-    // Get all menus with elements
-    $allMenus = $conn->query("
-        SELECT m.*, 
-        GROUP_CONCAT(e.element_id) AS element_ids
-        FROM rs_menus m
-        LEFT JOIN menu_elements e ON m.menu_id = e.menu_id
-        GROUP BY m.menu_id
-    ")->fetchAll(PDO::FETCH_ASSOC);
+    // Fetch associated menus and elements
+    $selectedMenus = $conn->query("SELECT menu_id FROM group_menus WHERE group_id = $groupId")
+                         ->fetchAll(PDO::FETCH_COLUMN);
+    
+    $selectedElements = $conn->query("
+        SELECT element_id FROM group_elements 
+        WHERE group_id = $groupId
+    ")->fetchAll(PDO::FETCH_COLUMN);
 
 } catch (PDOException $e) {
-    $error = "Erreur base de données: " . $e->getMessage();
-} catch (Exception $e) {
-    $error = $e->getMessage();
+    header('HTTP/1.1 500 Internal Server Error');
+    die(json_encode(['error' => 'Erreur base de données: ' . $e->getMessage()]));
 }
 
 // Handle form submission
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $response = ['success' => false];
+    
     try {
-        $groupId = $_POST['id'];
-        $groupName = trim($_POST['group_name']);
-        $description = trim($_POST['description']);
-        $isSupergroup = isset($_POST['is_supergroup']) ? 1 : 0;
-        $menus = $_POST['menus'] ?? [];
-
         // Validate inputs
-        if (empty($groupName)) {
+        if (empty($_POST['group_name'])) {
             throw new Exception("Le nom du groupe est obligatoire");
         }
-
-        // Start transaction
-        $conn->beginTransaction();
 
         // Update group
         $stmt = $conn->prepare("
@@ -75,158 +74,204 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             SET group_name = ?, description = ?, is_supergroup = ?
             WHERE group_id = ?
         ");
-        $stmt->execute([$groupName, $description, $isSupergroup, $groupId]);
+        $stmt->execute([
+            $_POST['group_name'],
+            $_POST['description'] ?? null,
+            isset($_POST['is_supergroup']) ? 1 : 0,
+            $groupId
+        ]);
 
-        // Update permissions
-        $conn->prepare("DELETE FROM group_menus WHERE group_id = ?")->execute([$groupId]);
-        $conn->prepare("DELETE FROM group_elements WHERE group_id = ?")->execute([$groupId]);
+        // Update menu access
+$conn->beginTransaction();
 
-        if (!empty($menus)) {
-            $menuStmt = $conn->prepare("INSERT INTO group_menus (group_id, menu_id) VALUES (?, ?)");
-            $elementStmt = $conn->prepare("INSERT INTO group_elements (group_id, element_id, menu_id) VALUES (?, ?, ?)");
+// Clear existing permissions in correct order
+$conn->exec("DELETE FROM group_elements WHERE group_id = $groupId");
+$conn->exec("DELETE FROM group_menus WHERE group_id = $groupId");
+
+// Insert new permissions
+if (!empty($_POST['menus'])) {
+    $menuStmt = $conn->prepare("INSERT INTO group_menus (group_id, menu_id) VALUES (?, ?)");
+    $elementStmt = $conn->prepare("INSERT INTO group_elements (group_id, element_id) VALUES (?, ?)");
+    
+    foreach ($_POST['menus'] as $menuId => $menuData) {
+        if (!is_numeric($menuId)) continue;
+        
+        // Only process if menu checkbox is checked
+        if (isset($menuData['menu'])) {
+            // Insert menu
+            $menuStmt->execute([$groupId, $menuId]);
             
-            foreach ($menus as $menuId => $elements) {
-                if (!is_numeric($menuId)) continue;
-                
-                $menuStmt->execute([$groupId, $menuId]);
-                
-                if (is_array($elements)) {
-                    foreach ($elements as $elementId) {
-                        if (!is_numeric($elementId)) continue;
-                        $elementStmt->execute([$groupId, $elementId, $menuId]);
+            // Insert elements if any
+            if (!empty($menuData['elements'])) {
+                foreach ($menuData['elements'] as $elementId) {
+                    if (is_numeric($elementId)) {
+                        $elementStmt->execute([$groupId, $elementId]);
                     }
                 }
             }
         }
+    }
+}
 
-        $conn->commit();
-        ob_end_clean();
-        echo json_encode(['success' => true, 'message' => 'Groupe mis à jour avec succès']);
-        exit();
+$conn->commit();
+        $response['success'] = true;
+        $response['message'] = "Groupe mis à jour avec succès";
 
     } catch (Exception $e) {
         $conn->rollBack();
-        ob_end_clean(); // Clear buffered output
-        echo json_encode([
-            'success' => false,
-            'error' => $e->getMessage()
-        ]);
-        exit();
+        $response['error'] = $e->getMessage();
     }
+
+    header('Content-Type: application/json');
+    echo json_encode($response);
+    exit();
 }
 
-// Display form
-if (isset($_GET['partial'])) {
-    ob_end_clean();
-?>
-<div class="container mx-auto p-6">
-    <h1 class="text-2xl font-bold mb-6">Modifier Groupe</h1>
+// If partial request, return form HTML
+if ($isPartial) {
+    // Updated query to fetch ALL menus and elements
+    $menus = $conn->query("
+        SELECT m.*, 
+               GROUP_CONCAT(DISTINCT e.element_id) as element_ids,
+               GROUP_CONCAT(DISTINCT e.element_name) as element_names
+        FROM rs_menus m
+        LEFT JOIN menu_elements e ON m.menu_id = e.menu_id
+        GROUP BY m.menu_id
+        ORDER BY m.menu_name
+    ")->fetchAll(PDO::FETCH_ASSOC);
 
-    <?php if ($error): ?>
-        <div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
-            <?= htmlspecialchars($error) ?>
-        </div>
-    <?php endif; ?>
+    // Get currently selected menus and elements for this group
+    $selectedMenus = $conn->query("
+        SELECT menu_id FROM group_menus WHERE group_id = $groupId
+    ")->fetchAll(PDO::FETCH_COLUMN);
 
-    <form method="POST" class="bg-white p-6 rounded shadow-md">
-        <input type="hidden" name="id" value="<?= htmlspecialchars($groupId) ?>">
+    $selectedElements = $conn->query("
+        SELECT element_id FROM group_elements WHERE group_id = $groupId
+    ")->fetchAll(PDO::FETCH_COLUMN);
+    ?>
+    <!DOCTYPE html>
+    <html lang="fr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <script src="https://cdn.tailwindcss.com"></script>
+        <style>
+            input[type="checkbox"] {
+                cursor: pointer;}
+.element-disabled {
+    opacity: 0.5;
+    pointer-events: none;
+    cursor: not-allowed;
+}
+</style>
+    </head>
+    <body class="bg-gray-100">
+        <div class="container mx-auto p-6">
+            <h2 class="text-xl font-bold mb-4">Modifier le Groupe</h2>
+            
+            <form method="POST" class="bg-white p-6 rounded shadow-md">
+                <input type="hidden" name="id" value="<?= $group['group_id'] ?>">
+                
+                <div class="mb-4">
+                    <label class="block text-gray-700 text-sm font-bold mb-2">Nom du groupe</label>
+                    <input type="text" name="group_name" required
+                        class="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-400"
+                        value="<?= htmlspecialchars($group['group_name']) ?>">
+                </div>
 
-        <div class="mb-4">
-            <label class="block text-gray-700 text-sm font-bold mb-2">Nom du groupe</label>
-            <input type="text" name="group_name" required
-                class="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-400"
-                value="<?= htmlspecialchars($group['group_name']) ?>">
-        </div>
+                <div class="mb-4">
+                    <label class="block text-gray-700 text-sm font-bold mb-2">Description</label>
+                    <textarea name="description"
+                        class="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-400"
+                    ><?= htmlspecialchars($group['description'] ?? '') ?></textarea>
+                </div>
 
-        <div class="mb-4">
-            <label class="block text-gray-700 text-sm font-bold mb-2">Description</label>
-            <textarea name="description"
-                class="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-400"
-            ><?= htmlspecialchars($group['description']) ?></textarea>
-        </div>
+                <div class="mb-4">
+                    <label class="flex items-center space-x-2">
+                        <input type="checkbox" name="is_supergroup" 
+                            <?= $group['is_supergroup'] ? 'checked' : '' ?>
+                            class="form-checkbox h-4 w-4 text-blue-600">
+                        <span>Supergroupe</span>
+                    </label>
+                </div>
 
-        <div class="mb-4">
-            <label class="flex items-center space-x-2">
-                <input type="checkbox" name="is_supergroup"
-                    class="form-checkbox h-4 w-4 text-blue-600"
-                    <?= $group['is_supergroup'] ? 'checked' : '' ?>>
-                <span>Supergroupe</span>
-            </label>
-        </div>
-
-        <div class="mb-4">
-            <h3 class="text-lg font-semibold mb-3">Permissions</h3>
-            <div class="space-y-4">
-                <?php foreach ($allMenus as $menu): 
-                    $hasAccess = isset($groupMenus[$menu['menu_id']]);
-                ?>
-                    <div class="border rounded p-4">
-                        <label class="flex items-center font-medium mb-2">
-                            <input type="checkbox" 
-                                name="menus[<?= $menu['menu_id'] ?>][]"
-                                class="menu-checkbox h-4 w-4 text-blue-600 mr-2"
-                                <?= $hasAccess ? 'checked' : '' ?>
-                                onchange="toggleElements(this, <?= $menu['menu_id'] ?>)">
-                            <?= htmlspecialchars($menu['menu_name']) ?>
-                        </label>
-                        
-                        <?php if (!empty($menu['element_ids'])): 
-                            $elements = explode(',', $menu['element_ids']);
-                            $selectedElements = $hasAccess ? explode(',', $groupMenus[$menu['menu_id']]) : [];
-                        ?>
-                            <div class="ml-6 grid grid-cols-2 gap-2 elements-container" 
-                                id="elements-<?= $menu['menu_id'] ?>" 
-                                style="display: <?= $hasAccess ? 'block' : 'none' ?>;">
-                                <?php foreach ($elements as $elementId): 
-                                    $element = $conn->query("
-                                        SELECT * FROM menu_elements 
-                                        WHERE element_id = $elementId
-                                    ")->fetch(PDO::FETCH_ASSOC);
+                <div class="mb-4">
+                    <h3 class="text-lg font-semibold mb-3">Permissions</h3>
+                    <div class="space-y-4">
+                        <?php foreach ($menus as $menu): ?>
+                            <div class="border rounded p-4">
+                                <label class="flex items-center font-medium mb-2">
+                                    <input type="checkbox" 
+                                        name="menus[<?= $menu['menu_id'] ?>][menu]"
+                                        class="menu-checkbox h-4 w-4 text-blue-600 mr-2"
+                                        <?= in_array($menu['menu_id'], $selectedMenus) ? 'checked' : '' ?>
+                                        onchange="toggleElements(this, <?= $menu['menu_id'] ?>)">
+                                    <?= htmlspecialchars($menu['menu_name']) ?>
+                                </label>
+                                
+                                <?php if (!empty($menu['element_ids'])): 
+                                    $elementIds = explode(',', $menu['element_ids']);
+                                    $elementNames = explode(',', $menu['element_names']);
                                 ?>
-                                    <label class="flex items-center space-x-2">
-                                        <input type="checkbox" 
-                                            name="menus[<?= $menu['menu_id'] ?>][]"
-                                            value="<?= $elementId ?>"
-                                            class="element-checkbox h-4 w-4 text-blue-600"
-                                            <?= in_array($elementId, $selectedElements) ? 'checked' : '' ?>
-                                            <?= !$hasAccess ? 'disabled' : '' ?>>
-                                        <span><?= htmlspecialchars($element['element_name']) ?></span>
-                                    </label>
-                                <?php endforeach; ?>
+                                    <div class="ml-6 grid grid-cols-2 gap-2 elements-container" 
+                                        id="elements-<?= $menu['menu_id'] ?>">
+                                        <?php foreach ($elementIds as $index => $elementId): ?>
+                                            <label class="flex items-center space-x-2">
+                                                <input type="checkbox" 
+                                                    name="menus[<?= $menu['menu_id'] ?>][elements][]"
+                                                    value="<?= $elementId ?>"
+                                                    class="element-checkbox h-4 w-4 text-blue-600"
+                                                    <?= in_array($elementId, $selectedElements) ? 'checked' : '' ?>>
+                                                <span><?= htmlspecialchars($elementNames[$index]) ?></span>
+                                            </label>
+                                        <?php endforeach; ?>
+                                    </div>
+                                <?php endif; ?>
                             </div>
-                        <?php endif; ?>
+                        <?php endforeach; ?>
                     </div>
-                <?php endforeach; ?>
-            </div>
+                </div>
+
+                <div class="flex justify-end space-x-4 mt-6">
+                    <button type="button" onclick="cancelEdit()"
+                        class="px-4 py-2 text-gray-600 hover:text-gray-800 font-medium">
+                        Annuler
+                    </button>
+                    <button type="submit" 
+                        class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 font-medium">
+                        Mettre à jour
+                    </button>
+                </div>
+            </form>
         </div>
 
-        <div class="flex justify-end space-x-4 mt-6">
-            <button type="button" onclick="cancelEdit()"
-                class="px-4 py-2 text-gray-600 hover:text-gray-800 font-medium">
-                Annuler
-            </button>
-            <button type="submit" 
-                class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 font-medium">
-                Enregistrer
-            </button>
-        </div>
-    </form>
-</div>
+        <script>
+        function toggleElements(checkbox, menuId) {
+            const elementsContainer = document.getElementById(`elements-${menuId}`);
+            if (elementsContainer) {
+                const checkboxes = elementsContainer.querySelectorAll('.element-checkbox');
+                checkboxes.forEach(el => {
+                    // Update disabled state
+                    el.disabled = !checkbox.checked;
+                    
+                    // If menu is unchecked, uncheck all its elements
+                    if (!checkbox.checked) {
+                        el.checked = false;
+                    }
+                });
+            }
+        }
 
-<script>
-function toggleElements(checkbox, menuId) {
-    const elementsContainer = document.getElementById(`elements-${menuId}`);
-    if (elementsContainer) {
-        elementsContainer.style.display = checkbox.checked ? 'block' : 'none';
-        elementsContainer.querySelectorAll('.element-checkbox').forEach(el => {
-            el.disabled = !checkbox.checked;
-            if (!checkbox.checked) el.checked = false;
+        // Initialize all menu checkboxes on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            document.querySelectorAll('.menu-checkbox').forEach(checkbox => {
+                // Set initial state of element checkboxes
+                toggleElements(checkbox, checkbox.closest('div').querySelector('.elements-container').id.split('-')[1]);
+            });
         });
-    }
+        </script>
+    </body>
+    </html>
+    <?php
+    exit();
 }
-</script>
-<?php
-exit();
-}
-ob_end_flush();
-?>

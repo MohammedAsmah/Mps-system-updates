@@ -37,14 +37,14 @@ if (isset($_POST['action'])) {
 // Récupération des groupes
 try {
     $sql = "SELECT g.*, 
-            COUNT(ug.user_id) as members_count,
-            GROUP_CONCAT(m.menu_name SEPARATOR ', ') as menus_access
-            FROM rs_groups g
-            LEFT JOIN group_menus gm ON g.group_id = gm.group_id
-            LEFT JOIN rs_menus m ON gm.menu_id = m.menu_id
-            LEFT JOIN user_groups ug ON g.group_id = ug.group_id
-            GROUP BY g.group_id
-            ORDER BY g.group_name";
+    COUNT(DISTINCT ug.user_id) as members_count,
+    GROUP_CONCAT(DISTINCT m.menu_name SEPARATOR ', ') as menus_access
+    FROM rs_groups g
+    LEFT JOIN group_menus gm ON g.group_id = gm.group_id
+    LEFT JOIN rs_menus m ON gm.menu_id = m.menu_id
+    LEFT JOIN user_groups ug ON g.group_id = ug.group_id
+    GROUP BY g.group_id
+    ORDER BY g.group_name";
     
     $stmt = $conn->prepare($sql);
     $stmt->execute();
@@ -171,29 +171,27 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Load Edit Group Form
     window.loadEditGroupForm = function(groupId) {
-        const baseUrl = window.location.origin + '/mps_udated_version/';
-        const absoluteUrl = `${baseUrl}home.php?section=groups&item=update_group&id=${groupId}&partial=1`;
-        
-        fetch(absoluteUrl, {
-            headers: {
-                'X-Requested-With': 'XMLHttpRequest'
-            }
-        })
-        .then(response => {
-            if (!response.ok) throw new Error(`HTTP ${response.status}`);
-            return response.text();
-        })
-        .then(html => {
-            const editContainer = document.getElementById('editGroupFormContainer');
-            editContainer.innerHTML = html;
-            editContainer.style.display = 'block';
-            groupTableContainer.style.display = 'none';
-        })
-        .catch(error => {
-            console.error('Fetch Error:', error);
-            alert(`Erreur de chargement: ${error.message}`);
-        });
-    };
+    // Use relative path instead of absolute
+    const url = `home.php?section=groups&item=update_group&id=${groupId}&partial=1`;
+    
+    fetch(url, {
+        headers: { 'X-Requested-With': 'XMLHttpRequest' }
+    })
+    .then(response => {
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return response.text();
+    })
+    .then(html => {
+        const editContainer = document.getElementById('editGroupFormContainer');
+        editContainer.innerHTML = html;
+        editContainer.style.display = 'block';
+        groupTableContainer.style.display = 'none';
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Error loading form: ' + error.message);
+    });
+};
 
     // Cancel Edit
     window.cancelEdit = function() {
@@ -202,40 +200,54 @@ document.addEventListener('DOMContentLoaded', function() {
     };
 
     // Edit Form Submission
-    document.querySelector('#editGroupFormContainer')?.addEventListener('submit', function(e) {
-        e.preventDefault();
-        const formData = new FormData(this);
-        const groupId = this.querySelector('input[name="id"]').value;
+document.getElementById('editGroupFormContainer').addEventListener('submit', function(e) {
+    e.preventDefault();
+    
+    // Get the actual form element
+    const form = e.target.closest('form');
+    if (!form) return;
 
-        fetch(`home.php?section=groups&item=update_group&id=${groupId}`, {
-            method: 'POST',
-            headers: { 'X-Requested-With': 'XMLHttpRequest' },
-            body: formData
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                window.location.reload();
-            } else {
-                alert('Erreur: ' + (data.error || 'Erreur inconnue'));
-            }
-        })
-        .catch(error => console.error('Error:', error));
+    const formData = new FormData(form);
+    const groupId = form.querySelector('input[name="id"]').value;
+
+    fetch(`home.php?section=groups&item=update_group&id=${groupId}`, {
+        method: 'POST',
+        headers: { 
+            'X-Requested-With': 'XMLHttpRequest',
+            'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: new URLSearchParams(formData)
+    })
+    .then(response => {
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return response.json();
+    })
+    .then(data => {
+        if (data.success) {
+            window.location.reload();
+        } else {
+            alert('Erreur: ' + (data.error || 'Erreur inconnue'));
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Erreur de mise à jour: ' + error.message);
     });
+});
 
-    // Add Group Form Submission
     // Add Group Form Submission
 document.querySelector('#addGroupFormContainer form')?.addEventListener('submit', function(e) {
     e.preventDefault();
     const formData = new FormData(this);
 
-    fetch('home.php?section=groups&item=add_group', {  // Correct URL path
-        method: 'POST',
-        headers: {
-            'X-Requested-With': 'XMLHttpRequest'
-        },
-        body: formData
-    })
+    fetch('home.php?section=groups&item=add_group', {
+    method: 'POST',
+    headers: { 
+        'X-Requested-With': 'XMLHttpRequest',
+        'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: new URLSearchParams(formData)
+})
     .then(response => {
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
