@@ -1,8 +1,24 @@
 <?php
-// This should be at the top of home.php
+// Handle add_user POST requests
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_GET['item']) && $_GET['item'] === 'add_user') {
     include __DIR__ . '/content/users/add_user.php';
     exit();
+}
+// Handle add_group POST requests
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_GET['item']) && $_GET['item'] === 'add_group') {
+    include __DIR__ . '/content/groups/add_group.php';
+    exit();
+}
+// Handle update_group requests
+if (isset($_GET['item']) && $_GET['item'] === 'update_group') {
+    $file_path = __DIR__ . '/content/groups/update_group.php';
+    
+    if (file_exists($file_path)) {
+        include $file_path;
+    } else {
+        http_response_code(404);
+        die("Update group file not found");
+    }
 }
 // Handle update_user requests immediately
 if (isset($_GET['item']) && $_GET['item'] === 'update_user') {
@@ -17,7 +33,6 @@ if (isset($_GET['item']) && $_GET['item'] === 'update_user') {
     }
 }
 
-// ... keep original code below ...
 session_start();
 if (!isset($_SESSION['user_id'])) {
     header('Location: index.php?error=Please+log+in');
@@ -134,7 +149,6 @@ if ($currentSection) {
 $currentItem = isset($_GET['item']) && isset($sidebar[$_GET['item']])
     ? $_GET['item']
     : (count($sidebar) ? array_key_first($sidebar) : null);
-// Add special case for update_user in home.php
 // After $currentItem is set
 if ($currentItem === 'update_user') {
     $file_path = __DIR__ . '/content/users/update_user.php';
@@ -231,11 +245,8 @@ if ($currentItem && isset($sidebar[$currentItem])) {
                         <?php 
                         if ($currentItem && isset($sidebar[$currentItem])) {
                             $file_path = $sidebar[$currentItem]['file_path'];
-                            // Clean the file path - remove quotes and extra slashes
                             $file_path = trim($file_path, "'\" /\\");                            
-                            // Try multiple possible locations
-                            // Update this section:
-// Add this to the possible paths array
+                            
 $possible_paths = [
     __DIR__ . '/' . $file_path,
     __DIR__ . '/content/users/' . $file_path, // Explicit users path
@@ -272,7 +283,6 @@ $possible_paths = [
 
     <script>
         document.addEventListener('DOMContentLoaded', function() {
-            // Additional JavaScript if needed
         });
     </script>
 </body>
