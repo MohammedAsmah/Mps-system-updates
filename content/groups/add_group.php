@@ -173,92 +173,138 @@ if (!isset($_SERVER['HTTP_X_REQUESTED_WITH']) || strtolower($_SERVER['HTTP_X_REQ
     <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-gray-100">
-    <div class="container mx-auto p-6">
-        <h1 class="text-2xl font-bold mb-6">Nouveau Groupe</h1>
-
         <form method="POST" class="bg-white p-6 rounded shadow-md" id="addGroupForm">
-            <?php if ($response['success']): ?>
-                <div class="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded mb-4">
-                    <?= htmlspecialchars($response['message']) ?>
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-xl font-bold">Ajouter un Groupe</h2>
+                    <button onclick="cancelAdd()" class="text-gray-500 hover:text-gray-700">
+                        <i class="fas fa-times"></i>
+                    </button>
                 </div>
-            <?php elseif ($response['error']): ?>
-                <div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
-                    <?= htmlspecialchars($response['error']) ?>
+                <div id="messageContainer"></div>
+
+                <?php if ($response['success']): ?>
+                    <div class="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded mb-4">
+                        <?= htmlspecialchars($response['message']) ?>
+                    </div>
+                <?php elseif ($response['error']): ?>
+                    <div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
+                        <?= htmlspecialchars($response['error']) ?>
+                    </div>
+                <?php endif; ?>
+
+                <div class="mb-4">
+                    <label class="block text-gray-700 text-sm font-bold mb-2">Nom du groupe</label>
+                    <input type="text" name="group_name" required
+                        class="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-400"
+                        value="<?= htmlspecialchars($response['fields']['group_name']) ?>">
                 </div>
-            <?php endif; ?>
 
-            <div class="mb-4">
-                <label class="block text-gray-700 text-sm font-bold mb-2">Nom du groupe</label>
-                <input type="text" name="group_name" required
-                    class="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-400"
-                    value="<?= htmlspecialchars($response['fields']['group_name']) ?>">
-            </div>
-
-            <div class="mb-4">
-                <label class="block text-gray-700 text-sm font-bold mb-2">Description</label>
-                <textarea name="description"
-                    class="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-400"
-                ><?= htmlspecialchars($response['fields']['description']) ?></textarea>
-            </div>
-
-            <div class="mb-4">
-                <label class="flex items-center space-x-2">
-                    <input type="checkbox" name="is_supergroup"
-                        class="form-checkbox h-4 w-4 text-blue-600">
-                    <span>Supergroupe (accès complet)</span>
-                </label>
-            </div>
-
-            <div class="mb-4">
-                <h3 class="text-lg font-semibold mb-3">Permissions</h3>
-                <div class="space-y-4">
-                    <?php foreach ($menus as $menu): ?>
-                        <div class="border rounded p-4">
-                            <label class="flex items-center font-medium mb-2">
-                                <input type="checkbox" name="menus[<?= $menu['menu_id'] ?>][]"
-                                    class="menu-checkbox h-4 w-4 text-blue-600 mr-2"
-                                    onchange="toggleElements(this, <?= $menu['menu_id'] ?>)">
-                                <?= htmlspecialchars($menu['menu_name']) ?>
-                            </label>
-                            
-                            <?php if (!empty($menu['element_ids'])): ?>
-                                <div class="ml-6 grid grid-cols-2 gap-2 elements-container" 
-                                    id="elements-<?= $menu['menu_id'] ?>" style="display: none;">
-                                    <?php 
-                                    $elements = $conn->query("
-                                        SELECT * FROM menu_elements 
-                                        WHERE menu_id = " . $menu['menu_id']
-                                    )->fetchAll(PDO::FETCH_ASSOC);
-                                    foreach ($elements as $element): ?>
-                                        <label class="flex items-center space-x-2">
-                                            <input type="checkbox" 
-                                                name="menus[<?= $menu['menu_id'] ?>][]"
-                                                value="<?= $element['element_id'] ?>"
-                                                class="element-checkbox h-4 w-4 text-blue-600">
-                                            <span><?= htmlspecialchars($element['element_name']) ?></span>
-                                        </label>
-                                    <?php endforeach; ?>
-                                </div>
-                            <?php endif; ?>
-                        </div>
-                    <?php endforeach; ?>
+                <div class="mb-4">
+                    <label class="block text-gray-700 text-sm font-bold mb-2">Description</label>
+                    <textarea name="description"
+                        class="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-400"
+                    ><?= htmlspecialchars($response['fields']['description']) ?></textarea>
                 </div>
-            </div>
 
-            <div class="flex justify-end space-x-4 mt-6">
-                <button type="button" onclick="window.cancelAdd()"
-                    class="px-4 py-2 text-gray-600 hover:text-gray-800 font-medium">
-                    Annuler
-                </button>
-                <button type="submit" 
-                    class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 font-medium">
-                    Créer le groupe
-                </button>
-            </div>
+                <div class="mb-4">
+                    <label class="flex items-center space-x-2">
+                        <input type="checkbox" name="is_supergroup"
+                            class="form-checkbox h-4 w-4 text-blue-600">
+                        <span>Supergroupe (accès complet)</span>
+                    </label>
+                </div>
+
+                <div class="mb-4">
+                    <h3 class="text-lg font-semibold mb-3">Permissions</h3>
+                    <div class="space-y-4">
+                        <?php foreach ($menus as $menu): ?>
+                            <div class="border rounded p-4">
+                                <label class="flex items-center font-medium mb-2">
+                                    <input type="checkbox" name="menus[<?= $menu['menu_id'] ?>][]"
+                                        class="menu-checkbox h-4 w-4 text-blue-600 mr-2"
+                                        onchange="toggleElements(this, <?= $menu['menu_id'] ?>)">
+                                    <?= htmlspecialchars($menu['menu_name']) ?>
+                                </label>
+                                
+                                <?php if (!empty($menu['element_ids'])): ?>
+                                    <div class="ml-6 grid grid-cols-2 gap-2 elements-container" 
+                                        id="elements-<?= $menu['menu_id'] ?>" style="display: none;">
+                                        <?php 
+                                        $elements = $conn->query("
+                                            SELECT * FROM menu_elements 
+                                            WHERE menu_id = " . $menu['menu_id']
+                                        )->fetchAll(PDO::FETCH_ASSOC);
+                                        foreach ($elements as $element): ?>
+                                            <label class="flex items-center space-x-2">
+                                                <input type="checkbox" 
+                                                    name="menus[<?= $menu['menu_id'] ?>][]"
+                                                    value="<?= $element['element_id'] ?>"
+                                                    class="element-checkbox h-4 w-4 text-blue-600">
+                                                <span><?= htmlspecialchars($element['element_name']) ?></span>
+                                            </label>
+                                        <?php endforeach; ?>
+                                    </div>
+                                <?php endif; ?>
+                            </div>
+                        <?php endforeach; ?>
+                    </div>
+                </div>
+
+                <div class="flex justify-end space-x-4 mt-6">
+                    <button type="button" onclick="window.cancelAdd()"
+                        class="px-4 py-2 text-gray-600 hover:text-gray-800 font-medium">
+                        Annuler
+                    </button>
+                    <button type="submit" 
+                        class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 font-medium">
+                        Créer le groupe
+                    </button>
+                </div>
         </form>
-    </div>
 
     <script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const addGroupForm = document.querySelector('#addGroupForm');
+        const messageContainer = document.getElementById('messageContainer');
+
+        function showFormMessage(message, isError = false) {
+            messageContainer.innerHTML = '';
+            const messageDiv = document.createElement('div');
+            messageDiv.className = isError 
+                ? 'bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4'
+                : 'bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded mb-4';
+            messageDiv.innerHTML = message;
+            messageContainer.appendChild(messageDiv);
+        }
+
+        addGroupForm?.addEventListener('submit', function(e) {
+            e.preventDefault();
+            messageContainer.innerHTML = '';
+            const formData = new FormData(this);
+
+            fetch('home.php?section=groups&item=add_group', {
+                method: 'POST',
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    showFormMessage(data.message || 'Groupe créé avec succès');
+                    this.reset();
+                    setTimeout(() => window.location.reload(), 1000);
+                } else {
+                    showFormMessage(data.error || 'Une erreur est survenue', true);
+                }
+            })
+            .catch(error => {
+                showFormMessage('Erreur lors de la création: ' + error.message, true);
+            });
+        });
+    });
+
     function toggleElements(checkbox, menuId) {
         const elementsContainer = document.getElementById(`elements-${menuId}`);
         if (elementsContainer) {

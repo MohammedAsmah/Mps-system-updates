@@ -11,6 +11,16 @@ if (isset($_POST['action'])) {
         case 'delete':
             if (isset($_POST['group_id'])) {
                 try {
+                    // Check if group has users
+                    $checkStmt = $conn->prepare("SELECT COUNT(*) FROM user_groups WHERE group_id = ?");
+                    $checkStmt->execute([$_POST['group_id']]);
+                    $hasUsers = $checkStmt->fetchColumn() > 0;
+
+                    if ($hasUsers) {
+                        $_SESSION['error_message'] = "Impossible de supprimer ce groupe car il est associé à des utilisateurs";
+                        break;
+                    }
+
                     $stmt = $conn->prepare("DELETE FROM rs_groups WHERE group_id = ?");
                     $stmt->execute([$_POST['group_id']]);
                     $_SESSION['success_message'] = "Groupe supprimé avec succès";
@@ -56,14 +66,14 @@ try {
 
 <div class="container mx-auto">
     <?php if (isset($_SESSION['error_message'])): ?>
-        <div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
+        <div id="errorMessage" class="message-fade bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4" style="opacity: 1">
             <?= htmlspecialchars($_SESSION['error_message']) ?>
         </div>
         <?php unset($_SESSION['error_message']); ?>
     <?php endif; ?>
 
     <?php if (isset($_SESSION['success_message'])): ?>
-        <div class="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded mb-4">
+        <div id="successMessage" class="message-fade bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded mb-4" style="opacity: 1">
             <?= htmlspecialchars($_SESSION['success_message']) ?>
         </div>
         <?php unset($_SESSION['success_message']); ?>
@@ -118,22 +128,15 @@ try {
                                     <i class="fas fa-edit"></i>
                                 </a>
                                 
-                                <form method="POST" class="inline">
-                                    <input type="hidden" name="action" value="toggle_supergroup">
-                                    <input type="hidden" name="group_id" value="<?= $group['group_id'] ?>">
-                                    <button type="submit" class="text-yellow-600 hover:text-yellow-900">
-                                        <i class="fas <?= $group['is_supergroup'] ? 'fa-star' : 'fa-star-half-alt' ?>"></i>
-                                    </button>
-                                </form>
+                                <button onclick="toggleSupergroup(<?= $group['group_id'] ?>)" 
+                                        class="text-yellow-600 hover:text-yellow-900">
+                                    <i class="fas <?= $group['is_supergroup'] ? 'fa-star' : 'fa-star-half-alt' ?>"></i>
+                                </button>
 
-                                <form method="POST" class="inline" 
-                                      onsubmit="return confirm('Êtes-vous sûr de vouloir supprimer ce groupe ?');">
-                                    <input type="hidden" name="action" value="delete">
-                                    <input type="hidden" name="group_id" value="<?= $group['group_id'] ?>">
-                                    <button type="submit" class="text-red-600 hover:text-red-900">
-                                        <i class="fas fa-trash"></i>
-                                    </button>
-                                </form>
+                                <button onclick="deleteGroup(<?= $group['group_id'] ?>)" 
+                                        class="text-red-600 hover:text-red-900">
+                                    <i class="fas fa-trash"></i>
+                                </button>
                             </div>
                         </td>
                     </tr>
@@ -157,128 +160,208 @@ try {
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {
+    // Message handling functions
+    const hideMessages = () => {
+        const messages = document.querySelectorAll('#successMessage, #errorMessage');
+        messages.forEach(msg => {
+            if (msg) {
+                setTimeout(() => {
+                    msg.style.transition = 'opacity 2s';
+                    msg.style.opacity = '0';
+                    setTimeout(() => msg.remove(), 2000);
+                }, 10000);
+            }
+        });
+    };
+
+    hideMessages();
+
+    window.showMessage = function(message, isError = false) {
+        document.querySelectorAll('#successMessage, #errorMessage').forEach(msg => msg.remove());
+        
+        const messageDiv = document.createElement('div');
+        messageDiv.id = isError ? 'errorMessage' : 'successMessage';
+        messageDiv.className = isError 
+            ? 'bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4'
+            : 'bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded mb-4';
+        messageDiv.style.opacity = '1';
+        messageDiv.innerHTML = message;
+        
+        const container = document.querySelector('.container');
+        container.insertBefore(messageDiv, container.firstChild);
+        
+        setTimeout(() => {
+            messageDiv.style.transition = 'opacity 2s';
+            messageDiv.style.opacity = '0';
+            setTimeout(() => messageDiv.remove(), 2000);
+        }, 10000);
+    };
+
+    window.toggleSupergroup = function(groupId) {
+        const formData = new FormData();
+        formData.append('action', 'toggle_supergroup');
+        formData.append('group_id', groupId);
+
+        fetch(window.location.href, {
+            method: 'POST',
+            body: new URLSearchParams(formData)
+        })
+        .then(response => response.text())
+        .then(() => {
+            showMessage('Statut supergroupe mis à jour');
+            setTimeout(() => location.reload(), 2000);
+        })
+        .catch(error => {
+            showMessage('Erreur lors de la mise à jour: ' + error, true);
+        });
+    };
+
+    window.deleteGroup = function(groupId) {
+        if (confirm('Êtes-vous sûr de vouloir supprimer ce groupe ?')) {
+            const formData = new FormData();
+            formData.append('action', 'delete');
+            formData.append('group_id', groupId);
+
+            fetch(window.location.href, {
+                method: 'POST',
+                body: new URLSearchParams(formData)
+            })
+            .then(response => response.text())
+            .then(() => {
+                const errorMsg = document.getElementById('errorMessage');
+                if (errorMsg && errorMsg.textContent.includes('associé à des utilisateurs')) {
+                    showMessage('Impossible de supprimer ce groupe car il est associé à des utilisateurs. Veuillez d\'abord retirer tous les utilisateurs de ce groupe.', true);
+                    return;
+                }
+                showMessage('Groupe supprimé avec succès');
+                setTimeout(() => location.reload(), 2000);
+            })
+            .catch(error => {
+                showMessage('Erreur lors de la suppression: ' + error, true);
+            });
+        }
+    };
+
     // Toggle Add Group Form
     const toggleAddGroupFormButton = document.getElementById('toggleAddGroupForm');
     const addGroupFormContainer = document.getElementById('addGroupFormContainer');
+    const editGroupFormContainer = document.getElementById('editGroupFormContainer');
     const groupTableContainer = document.getElementById('groupTableContainer');
 
+    // Updated toggle add group form handler
     if (toggleAddGroupFormButton) {
         toggleAddGroupFormButton.addEventListener('click', function() {
-            addGroupFormContainer.style.display = addGroupFormContainer.style.display === 'none' ? 'block' : 'none';
-            groupTableContainer.style.display = groupTableContainer.style.display === 'none' ? 'block' : 'none';
+            if (addGroupFormContainer.style.display === 'none') {
+                addGroupFormContainer.style.display = 'block';
+                groupTableContainer.style.display = 'none';
+                editGroupFormContainer.style.display = 'none'; // Hide edit form
+            } else {
+                addGroupFormContainer.style.display = 'none';
+                groupTableContainer.style.display = 'block';
+            }
         });
     }
 
     // Load Edit Group Form
     window.loadEditGroupForm = function(groupId) {
-    // Use relative path instead of absolute
-    const url = `home.php?section=groups&item=update_group&id=${groupId}&partial=1`;
-    
-    fetch(url, {
-        headers: { 'X-Requested-With': 'XMLHttpRequest' }
-    })
-    .then(response => {
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        return response.text();
-    })
-    .then(html => {
-        const editContainer = document.getElementById('editGroupFormContainer');
-        editContainer.innerHTML = html;
-        editContainer.style.display = 'block';
-        groupTableContainer.style.display = 'none';
-    })
-    .catch(error => {
-        console.error('Error:', error);
-        alert('Error loading form: ' + error.message);
-    });
-};
+        const url = `home.php?section=groups&item=update_group&id=${groupId}&partial=1`;
+        
+        fetch(url, {
+            headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        })
+        .then(response => {
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            return response.text();
+        })
+        .then(html => {
+            editGroupFormContainer.innerHTML = html;
+            editGroupFormContainer.style.display = 'block';
+            groupTableContainer.style.display = 'none';
+            addGroupFormContainer.style.display = 'none'; // Hide add form
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('Error loading form: ' + error.message);
+        });
+    };
 
     // Cancel Edit
     window.cancelEdit = function() {
-        document.getElementById('editGroupFormContainer').style.display = 'none';
+        editGroupFormContainer.style.display = 'none';
         groupTableContainer.style.display = 'block';
     };
 
     // Edit Form Submission
-document.getElementById('editGroupFormContainer').addEventListener('submit', function(e) {
-    e.preventDefault();
-    
-    // Get the actual form element
-    const form = e.target.closest('form');
-    if (!form) return;
+    document.getElementById('editGroupFormContainer').addEventListener('submit', function(e) {
+        e.preventDefault();
+        
+        const form = e.target.closest('form');
+        if (!form) return;
 
-    const formData = new FormData(form);
-    const groupId = form.querySelector('input[name="id"]').value;
+        const formData = new FormData(form);
+        const groupId = form.querySelector('input[name="id"]').value;
 
-    fetch(`home.php?section=groups&item=update_group&id=${groupId}`, {
-        method: 'POST',
-        headers: { 
-            'X-Requested-With': 'XMLHttpRequest',
-            'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: new URLSearchParams(formData)
-    })
-    .then(response => {
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        return response.json();
-    })
-    .then(data => {
-        if (data.success) {
-            window.location.reload();
-        } else {
-            alert('Erreur: ' + (data.error || 'Erreur inconnue'));
-        }
-    })
-    .catch(error => {
-        console.error('Error:', error);
-        alert('Erreur de mise à jour: ' + error.message);
+        fetch(`home.php?section=groups&item=update_group&id=${groupId}`, {
+            method: 'POST',
+            headers: { 
+                'X-Requested-With': 'XMLHttpRequest',
+                'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: new URLSearchParams(formData)
+        })
+        .then(response => {
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            return response.json();
+        })
+        .then(data => {
+            if (data.success) {
+                editGroupFormContainer.style.display = 'none';
+                groupTableContainer.style.display = 'block';
+                showMessage('Groupe mis à jour avec succès');
+                setTimeout(() => window.location.reload(), 2000);
+            } else {
+                showMessage(data.error || 'Une erreur est survenue', true);
+            }
+        })
+        .catch(error => {
+            showMessage('Erreur de mise à jour: ' + error.message, true);
+        });
     });
-});
 
     // Add Group Form Submission
-document.querySelector('#addGroupFormContainer form')?.addEventListener('submit', function(e) {
-    e.preventDefault();
-    const formData = new FormData(this);
+    document.querySelector('#addGroupFormContainer form')?.addEventListener('submit', function(e) {
+        e.preventDefault();
+        const formData = new FormData(this);
 
-    fetch('home.php?section=groups&item=add_group', {
-    method: 'POST',
-    headers: { 
-        'X-Requested-With': 'XMLHttpRequest',
-        'Content-Type': 'application/x-www-form-urlencoded',
-    },
-    body: new URLSearchParams(formData)
-})
-    .then(response => {
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        return response.text().then(text => {
-            try {
-                return JSON.parse(text);
-            } catch (e) {
-                console.error('Response:', text);
-                throw new Error('Invalid JSON response');
+        fetch('home.php?section=groups&item=add_group', {
+            method: 'POST',
+            headers: { 
+                'X-Requested-With': 'XMLHttpRequest',
+                'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: new URLSearchParams(formData)
+        })
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
             }
+            return response.json();
+        })
+        .then(data => {
+            if (data.success) {
+                setTimeout(() => window.location.reload(), 2000);
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
         });
-    })
-    .then(data => {
-        if (data.success) {
-            window.location.reload();
-        } else {
-            alert(data.error || 'Erreur lors de la création du groupe');
-        }
-    })
-    .catch(error => {
-        console.error('Error:', error);
-        alert('Erreur lors de la création du groupe: ' + error.message);
     });
-});
 
 });
 
 // Cancel Add Function
 window.cancelAdd = function() {
-    document.getElementById('addGroupFormContainer').style.display = 'none';
-    document.getElementById('groupTableContainer').style.display = 'block';
+    addGroupFormContainer.style.display = 'none';
+    groupTableContainer.style.display = 'block';
 };
 </script>
