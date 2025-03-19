@@ -235,6 +235,7 @@ while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
     </label>
 <?php endforeach; ?>
                                     </div>
+                                    
                                 <?php endif; ?>
                             </div>
                         <?php endforeach; ?>
