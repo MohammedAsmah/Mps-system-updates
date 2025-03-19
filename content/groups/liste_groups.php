@@ -15,12 +15,14 @@ if (isset($_POST['action'])) {
                     $checkStmt = $conn->prepare("SELECT COUNT(*) FROM user_groups WHERE group_id = ?");
                     $checkStmt->execute([$_POST['group_id']]);
                     $hasUsers = $checkStmt->fetchColumn() > 0;
-
+        
                     if ($hasUsers) {
                         $_SESSION['error_message'] = "Impossible de supprimer ce groupe car il est associé à des utilisateurs";
+                        // Make sure we don't show any success message
+                        unset($_SESSION['success_message']);
                         break;
                     }
-
+        
                     $stmt = $conn->prepare("DELETE FROM rs_groups WHERE group_id = ?");
                     $stmt->execute([$_POST['group_id']]);
                     $_SESSION['success_message'] = "Groupe supprimé avec succès";
@@ -44,6 +46,24 @@ if (isset($_POST['action'])) {
     }
 }
 
+// chgeckin users group 
+if (isset($_GET['check_users']) && isset($_GET['group_id'])) {
+    try {
+        // Check if group has users
+        $checkStmt = $conn->prepare("SELECT COUNT(*) FROM user_groups WHERE group_id = ?");
+        $checkStmt->execute([$_GET['group_id']]);
+        $hasUsers = $checkStmt->fetchColumn() > 0;
+        
+        // Return JSON response
+        header('Content-Type: application/json');
+        echo json_encode(['hasUsers' => $hasUsers]);
+        exit;
+    } catch (PDOException $e) {
+        header('Content-Type: application/json');
+        echo json_encode(['error' => $e->getMessage()]);
+        exit;
+    }
+}
 // Récupération des groupes
 try {
     $sql = "SELECT g.*, 
@@ -217,30 +237,38 @@ document.addEventListener('DOMContentLoaded', function() {
     };
 
     window.deleteGroup = function(groupId) {
-        if (confirm('Êtes-vous sûr de vouloir supprimer ce groupe ?')) {
-            const formData = new FormData();
-            formData.append('action', 'delete');
-            formData.append('group_id', groupId);
+    if (confirm('Êtes-vous sûr de vouloir supprimer ce groupe ?')) {
+        const formData = new FormData();
+        formData.append('action', 'delete');
+        formData.append('group_id', groupId);
 
-            fetch(window.location.href, {
-                method: 'POST',
-                body: new URLSearchParams(formData)
-            })
-            .then(response => response.text())
-            .then(() => {
-                const errorMsg = document.getElementById('errorMessage');
-                if (errorMsg && errorMsg.textContent.includes('associé à des utilisateurs')) {
-                    showMessage('Impossible de supprimer ce groupe car il est associé à des utilisateurs. Veuillez d\'abord retirer tous les utilisateurs de ce groupe.', true);
-                    return;
-                }
+        fetch(window.location.href, {
+            method: 'POST',
+            body: new URLSearchParams(formData)
+        })
+        .then(response => response.text())
+        .then(html => {
+            // Parse the HTML response to check for error messages
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(html, 'text/html');
+            const errorMessage = doc.querySelector('#errorMessage');
+            
+            if (errorMessage && errorMessage.textContent.includes('associé à des utilisateurs')) {
+                // If there's an error message about users, show it without claiming success
+                showMessage('Impossible de supprimer ce groupe car il est associé à des utilisateurs', true);
+            } else {
+                // No error about users, show success message
                 showMessage('Groupe supprimé avec succès');
-                setTimeout(() => location.reload(), 2000);
-            })
-            .catch(error => {
-                showMessage('Erreur lors de la suppression: ' + error, true);
-            });
-        }
-    };
+            }
+            
+            // Reload the page after a delay to show the updated state
+            setTimeout(() => location.reload(), 2000);
+        })
+        .catch(error => {
+            showMessage('Erreur lors de la suppression: ' + error, true);
+        });
+    }
+};
 
     // Toggle Add Group Form
     const toggleAddGroupFormButton = document.getElementById('toggleAddGroupForm');
