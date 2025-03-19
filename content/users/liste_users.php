@@ -53,14 +53,14 @@ try {
 
 <div class="container mx-auto">
     <?php if (isset($_SESSION['error_message'])): ?>
-        <div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
+        <div id="errorMessage" class="message-fade bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4" style="opacity: 1">
             <?= htmlspecialchars($_SESSION['error_message']) ?>
         </div>
         <?php unset($_SESSION['error_message']); ?>
     <?php endif; ?>
 
     <?php if (isset($_SESSION['success_message'])): ?>
-        <div class="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded mb-4">
+        <div id="successMessage" class="message-fade bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded mb-4" style="opacity: 1">
             <?= htmlspecialchars($_SESSION['success_message']) ?>
         </div>
         <?php unset($_SESSION['success_message']); ?>
@@ -111,22 +111,15 @@ try {
                                     <i class="fas fa-edit"></i>
                                 </a>
                                 
-                                <form method="POST" class="inline">
-                                    <input type="hidden" name="action" value="toggle_status">
-                                    <input type="hidden" name="user_id" value="<?= $user['user_id'] ?>">
-                                    <button type="submit" class="text-yellow-600 hover:text-yellow-900">
-                                        <i class="fas <?= $user['is_locked'] ? 'fa-lock-open' : 'fa-lock' ?>"></i>
-                                    </button>
-                                </form>
+                                <button onclick="toggleUserStatus(<?= $user['user_id'] ?>)" 
+                                        class="text-yellow-600 hover:text-yellow-900">
+                                    <i class="fas <?= $user['is_locked'] ? 'fa-lock-open' : 'fa-lock' ?>"></i>
+                                </button>
 
-                                <form method="POST" class="inline" 
-                                      onsubmit="return confirm('Êtes-vous sûr de vouloir supprimer cet utilisateur ?');">
-                                    <input type="hidden" name="action" value="delete">
-                                    <input type="hidden" name="user_id" value="<?= $user['user_id'] ?>">
-                                    <button type="submit" class="text-red-600 hover:text-red-900">
-                                        <i class="fas fa-trash"></i>
-                                    </button>
-                                </form>
+                                <button onclick="deleteUser(<?= $user['user_id'] ?>)" 
+                                        class="text-red-600 hover:text-red-900">
+                                    <i class="fas fa-trash"></i>
+                                </button>
                             </div>
                         </td>
                     </tr>
@@ -146,17 +139,86 @@ try {
     <?php include 'add_user.php'; ?>
 </div>
 
-
-
 <div id="editUserFormContainer" style="display: none;"></div>
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {
+    const hideMessages = () => {
+        const messages = document.querySelectorAll('#successMessage, #errorMessage');
+        messages.forEach(msg => {
+            if (msg) {
+                setTimeout(() => {
+                    msg.style.transition = 'opacity 2s';
+                    msg.style.opacity = '0';
+                    setTimeout(() => msg.remove(), 2000);
+                }, 10000);
+            }
+        });
+    };
+
+    hideMessages();
+
+    window.showMessage = function(message, isError = false) {
+        document.querySelectorAll('#successMessage, #errorMessage').forEach(msg => msg.remove());
+        
+        const messageDiv = document.createElement('div');
+        messageDiv.id = isError ? 'errorMessage' : 'successMessage';
+        messageDiv.className = isError 
+            ? 'bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4'
+            : 'bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded mb-4';
+        messageDiv.style.opacity = '1';
+        messageDiv.innerHTML = message;
+        
+        const container = document.querySelector('.container');
+        container.insertBefore(messageDiv, container.firstChild);
+        
+        setTimeout(() => messageDiv.remove(), 1000);
+    };
+
+    window.toggleUserStatus = function(userId) {
+        const formData = new FormData();
+        formData.append('action', 'toggle_status');
+        formData.append('user_id', userId);
+
+        fetch(window.location.href, {
+            method: 'POST',
+            body: new URLSearchParams(formData)
+        })
+        .then(response => response.text())
+        .then(() => {
+            showMessage('Statut de l\'utilisateur mis à jour');
+            setTimeout(() => location.reload(), 2000);
+        })
+        .catch(error => {
+            showMessage('Erreur lors de la mise à jour: ' + error, true);
+        });
+    };
+
+    window.deleteUser = function(userId) {
+        if (confirm('Êtes-vous sûr de vouloir supprimer cet utilisateur ?')) {
+            const formData = new FormData();
+            formData.append('action', 'delete');
+            formData.append('user_id', userId);
+
+            fetch(window.location.href, {
+                method: 'POST',
+                body: new URLSearchParams(formData)
+            })
+            .then(response => response.text())
+            .then(() => {
+                showMessage('Utilisateur supprimé avec succès');
+                setTimeout(() => location.reload(), 2000);
+            })
+            .catch(error => {
+                showMessage('Erreur lors de la suppression: ' + error, true);
+            });
+        }
+    };
+
     const toggleAddUserFormButton = document.getElementById('toggleAddUserForm');
     const addUserFormContainer = document.getElementById('addUserFormContainer');
     const userTableContainer = document.getElementById('userTableContainer');
 
-    // Toggle add user form
     toggleAddUserFormButton.addEventListener('click', function() {
         if (addUserFormContainer.style.display === 'none') {
             addUserFormContainer.style.display = 'block';
@@ -168,80 +230,50 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
 
-    // Add form submission handler
     const addUserForm = document.querySelector('#addUserFormContainer form');
     if (addUserForm) {
         addUserForm.addEventListener('submit', function(e) {
             e.preventDefault();
             const formData = new FormData(this);
 
-            // Add header to identify as AJAX request
             fetch('home.php?section=users&item=add_user', {
-    method: 'POST',
-    headers: {
-        'X-Requested-With': 'XMLHttpRequest'
-    },
-    body: formData
-})
-.then(response => {
-    if (!response.ok) {
-        throw new Error('Network response was not ok');
-    }
-    return response.text().then(text => {
-        try {
-            return JSON.parse(text);
-        } catch (e) {
-            console.error('Response:', text);
-            throw new Error('Invalid JSON response');
-        }
-    });
-})
+                method: 'POST',
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                body: formData
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Network response was not ok');
+                }
+                return response.text().then(text => {
+                    try {
+                        return JSON.parse(text);
+                    } catch (e) {
+                        console.error('Response:', text);
+                        throw new Error('Invalid JSON response');
+                    }
+                });
+            })
             .then(data => {
                 if (data.success) {
-                    const messageDiv = document.createElement('div');
-                    messageDiv.className = 'bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded mb-4';
-                    messageDiv.textContent = data.message || 'Utilisateur créé avec succès';
-                    addUserForm.prepend(messageDiv);
-                    
                     setTimeout(() => {
                         window.location.reload();
                     }, 2000);
-                } else {
-                    const messageDiv = document.createElement('div');
-                    messageDiv.className = 'bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4';
-                    messageDiv.textContent = data.error || 'Une erreur est survenue';
-                    
-                    const existingError = addUserForm.querySelector('.error-message');
-                    if (existingError) {
-                        existingError.remove();
-                    }
-                    
-                    messageDiv.classList.add('error-message');
-                    addUserForm.prepend(messageDiv);
                 }
             })
             .catch(error => {
                 console.error('Error:', error);
-                const messageDiv = document.createElement('div');
-                messageDiv.className = 'bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4 error-message';
-                messageDiv.textContent = 'Erreur lors de la création: ' + error.message;
-                
-                const existingError = addUserForm.querySelector('.error-message');
-                if (existingError) {
-                    existingError.remove();
-                }
-                
-                addUserForm.prepend(messageDiv);
             });
         });
     }
 
-    // Load edit form
     window.loadEditForm = function(userId) {
-        const baseUrl = window.location.origin + '/mps_udated_version/'; // Correct project name
+        const baseUrl = window.location.origin + '/mps_udated_version/';
         const absoluteUrl = `${baseUrl}home.php?section=users&item=update_user&id=${userId}&partial=1`;
         
-        console.log('Request URL:', absoluteUrl); // Debug
+        console.log('Request URL:', absoluteUrl);
         
         fetch(absoluteUrl)
             .then(response => {
@@ -259,16 +291,12 @@ document.addEventListener('DOMContentLoaded', function() {
             });
     };
 
-    // Cancel edit
     window.cancelEdit = function() {
         document.getElementById('editUserFormContainer').style.display = 'none';
         userTableContainer.style.display = 'block';
-        window.location.reload(); // Refresh to get updated data
+        window.location.reload();
     };
 
-    // ================================================================
-    // FORM SUBMISSION HANDLER
-    // ================================================================
     document.querySelector('#editUserFormContainer')?.addEventListener('submit', function(e) {
         e.preventDefault();
         const form = e.target;
@@ -284,20 +312,16 @@ document.addEventListener('DOMContentLoaded', function() {
             return response.json();
         })
         .then(data => {
-            // Hide the form and show the table immediately
             document.getElementById('editUserFormContainer').style.display = 'none';
             document.getElementById('userTableContainer').style.display = 'block';
 
-            // Create success message div
             const messageDiv = document.createElement('div');
             messageDiv.className = 'bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded mb-4';
             messageDiv.textContent = 'Utilisateur mis à jour avec succès';
             
-            // Insert message at the top of the container
             const container = document.querySelector('.container');
             container.insertBefore(messageDiv, container.firstChild);
             
-            // Remove message and reload page after 2 seconds
             setTimeout(() => {
                 messageDiv.remove();
                 window.location.reload();
@@ -315,7 +339,6 @@ document.addEventListener('DOMContentLoaded', function() {
             setTimeout(() => messageDiv.remove(), 3000);
         });
     });
-    // Add this to your script in liste_users.php
 window.cancelAdd = function() {
     document.getElementById('addUserFormContainer').style.display = 'none';
     document.getElementById('userTableContainer').style.display = 'block';

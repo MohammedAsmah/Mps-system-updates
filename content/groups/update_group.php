@@ -60,6 +60,7 @@ try {
 
 // Handle form submission
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    header('Content-Type: application/json');
     $response = ['success' => false];
     
     try {
@@ -81,7 +82,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $groupId
         ]);
 
-        // Update menu access
+ // Update menu access
 $conn->beginTransaction();
 
 // Clear existing permissions in correct order
@@ -116,15 +117,15 @@ if (!empty($_POST['menus'])) {
 $conn->commit();
         $response['success'] = true;
         $response['message'] = "Groupe mis à jour avec succès";
+        echo json_encode($response);
+        exit();
 
     } catch (Exception $e) {
         $conn->rollBack();
         $response['error'] = $e->getMessage();
+        echo json_encode($response);
+        exit();
     }
-
-    header('Content-Type: application/json');
-    echo json_encode($response);
-    exit();
 }
 
 // If partial request, return form HTML
@@ -145,9 +146,17 @@ if ($isPartial) {
         SELECT menu_id FROM group_menus WHERE group_id = $groupId
     ")->fetchAll(PDO::FETCH_COLUMN);
 
-    $selectedElements = $conn->query("
-        SELECT element_id FROM group_elements WHERE group_id = $groupId
-    ")->fetchAll(PDO::FETCH_COLUMN);
+    // Get currently selected elements grouped by menu_id
+$selectedElements = [];
+$stmt = $conn->query("SELECT menu_id, element_id FROM group_elements WHERE group_id = $groupId");
+while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+    $menuId = $row['menu_id'];
+    $elementId = $row['element_id'];
+    if (!isset($selectedElements[$menuId])) {
+        $selectedElements[$menuId] = [];
+    }
+    $selectedElements[$menuId][] = $elementId;
+}
     ?>
     <!DOCTYPE html>
     <html lang="fr">
@@ -216,16 +225,17 @@ if ($isPartial) {
                                     <div class="ml-6 grid grid-cols-2 gap-2 elements-container" 
                                         id="elements-<?= $menu['menu_id'] ?>">
                                         <?php foreach ($elementIds as $index => $elementId): ?>
-                                            <label class="flex items-center space-x-2">
-                                                <input type="checkbox" 
-                                                    name="menus[<?= $menu['menu_id'] ?>][elements][]"
-                                                    value="<?= $elementId ?>"
-                                                    class="element-checkbox h-4 w-4 text-blue-600"
-                                                    <?= in_array($elementId, $selectedElements) ? 'checked' : '' ?>>
-                                                <span><?= htmlspecialchars($elementNames[$index]) ?></span>
-                                            </label>
-                                        <?php endforeach; ?>
+    <label class="flex items-center space-x-2">
+        <input type="checkbox" 
+            name="menus[<?= $menu['menu_id'] ?>][elements][]"
+            value="<?= $elementId ?>"
+            class="element-checkbox h-4 w-4 text-blue-600"
+            <?= (isset($selectedElements[$menu['menu_id']]) && in_array($elementId, $selectedElements[$menu['menu_id']])) ? 'checked' : '' ?>>
+        <span><?= htmlspecialchars($elementNames[$index]) ?></span>
+    </label>
+<?php endforeach; ?>
                                     </div>
+                                    
                                 <?php endif; ?>
                             </div>
                         <?php endforeach; ?>
@@ -247,20 +257,33 @@ if ($isPartial) {
 
         <script>
         function toggleElements(checkbox, menuId) {
-            const elementsContainer = document.getElementById(`elements-${menuId}`);
-            if (elementsContainer) {
-                const checkboxes = elementsContainer.querySelectorAll('.element-checkbox');
-                checkboxes.forEach(el => {
-                    // Update disabled state
-                    el.disabled = !checkbox.checked;
-                    
-                    // If menu is unchecked, uncheck all its elements
-                    if (!checkbox.checked) {
-                        el.checked = false;
-                    }
-                });
+    const elementsContainer = document.getElementById(`elements-${menuId}`);
+    if (elementsContainer) {
+        const checkboxes = elementsContainer.querySelectorAll('.element-checkbox');
+        
+        // Only update the disabled state, don't change checked state
+        checkboxes.forEach(el => {
+            if (checkbox.checked) {
+                // Enable elements when menu is checked
+                el.disabled = false;
+                el.parentElement.classList.remove('element-disabled');
+            } else {
+                // Disable and uncheck elements when menu is unchecked
+                el.disabled = true;
+                el.checked = false;
+                el.parentElement.classList.add('element-disabled');
             }
-        }
+        });
+    }
+}
+
+// Initialize all menu checkboxes on page load
+document.addEventListener('DOMContentLoaded', function() {
+    document.querySelectorAll('.menu-checkbox').forEach(checkbox => {
+        const menuId = checkbox.name.match(/\[(\d+)\]/)[1];
+        toggleElements(checkbox, menuId);
+    });
+});
 
         // Initialize all menu checkboxes on page load
         document.addEventListener('DOMContentLoaded', function() {

@@ -106,86 +106,131 @@ if (empty($_SERVER['HTTP_X_REQUESTED_WITH']) || strtolower($_SERVER['HTTP_X_REQU
             input[type="checkbox"] {
                 cursor: pointer;} </style>
 <body class="bg-gray-100">
-    <div class="container mx-auto p-6">
-        <h1 class="text-2xl font-bold mb-6">Ajouter un Utilisateur</h1>
+   
 
-        <form method="POST" class="bg-white p-6 rounded shadow-md" id="addUserForm">
-<?php if ($response['success']): ?>
-    <div class="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded mb-4 alert-message">
-        <?= htmlspecialchars($response['message']) ?>
-    </div>
-<?php elseif ($response['error']): ?>
-    <div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4 alert-message">
-        <?= htmlspecialchars($response['error']) ?>
-    </div>
-<?php endif; ?>
-
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div class="mb-4">
-                    <label class="block text-gray-700 text-sm font-bold mb-2">Prénom</label>
-                    <input type="text" name="first_name" required
-                        class="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-400"
-                        value="<?= htmlspecialchars($response['fields']['first_name']) ?>">
-                </div>
-                <div class="mb-4">
-                    <label class="block text-gray-700 text-sm font-bold mb-2">Nom</label>
-                    <input type="text" name="last_name" required
-                        class="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-400"
-                        value="<?= htmlspecialchars($response['fields']['last_name']) ?>">
-                </div>
-            </div>
-
-            <div class="mb-4">
-                <label class="block text-gray-700 text-sm font-bold mb-2">Login</label>
-                <input type="text" name="login" required
-                    class="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-400"
-                    value="<?= htmlspecialchars($response['fields']['login']) ?>">
-            </div>
-
-            <div class="mb-4">
-                <label class="block text-gray-700 text-sm font-bold mb-2">Email</label>
-                <input type="email" name="email" required
-                    class="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-400"
-                    value="<?= htmlspecialchars($response['fields']['email']) ?>">
-            </div>
-
-            <div class="mb-4">
-                <label class="block text-gray-700 text-sm font-bold mb-2">Mot de passe</label>
-                <input type="password" name="password" required
-                    class="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-400">
-            </div>
-
-            <div class="mb-4">
-                <label class="block text-gray-700 text-sm font-bold mb-2">Groupes</label>
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-2">
-                    <?php if (!empty($allGroups)): ?>
-                        <?php foreach ($allGroups as $group): ?>
-                            <label class="flex items-center space-x-2 p-2 hover:bg-gray-50 rounded">
-                                <input type="checkbox" name="groups[]" 
-                                    value="<?= $group['group_id'] ?>"
-                                    <?= in_array($group['group_id'], $response['fields']['groups']) ? 'checked' : '' ?>
-                                    class="form-checkbox h-4 w-4 text-blue-600">
-                                <span><?= htmlspecialchars($group['group_name']) ?></span>
-                            </label>
-                        <?php endforeach; ?>
-                    <?php else: ?>
-                        <div class="text-red-500">Aucun groupe disponible</div>
-                    <?php endif; ?>
-                </div>
-            </div>
-
-            <div class="flex justify-end space-x-4 mt-6">
-                <button type="button" onclick="window.cancelAdd()"
-                    class="px-4 py-2 text-gray-600 hover:text-gray-800 font-medium">
-                    Annuler
-                </button>
-                <button type="submit" 
-                    class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 font-medium">
-                    Créer l'utilisateur
+        <div class="bg-white p-6 rounded-lg shadow-md">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-bold">Ajouter un Utilisateur</h2>
+                <button onclick="cancelAdd()" class="text-gray-500 hover:text-gray-700">
+                    <i class="fas fa-times"></i>
                 </button>
             </div>
-        </form>
+
+            <!-- Add message container -->
+            <div id="messageContainer"></div>
+
+            <form id="addUserForm" class="space-y-4" method="POST">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="mb-4">
+                        <label class="block text-gray-700 text-sm font-bold mb-2">Prénom</label>
+                        <input type="text" name="first_name" required
+                            class="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-400"
+                            value="<?= htmlspecialchars($response['fields']['first_name']) ?>">
+                    </div>
+                    <div class="mb-4">
+                        <label class="block text-gray-700 text-sm font-bold mb-2">Nom</label>
+                        <input type="text" name="last_name" required
+                            class="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-400"
+                            value="<?= htmlspecialchars($response['fields']['last_name']) ?>">
+                    </div>
+                </div>
+
+                <div class="mb-4">
+                    <label class="block text-gray-700 text-sm font-bold mb-2">Login</label>
+                    <input type="text" name="login" required
+                        class="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-400"
+                        value="<?= htmlspecialchars($response['fields']['login']) ?>">
+                </div>
+
+                <div class="mb-4">
+                    <label class="block text-gray-700 text-sm font-bold mb-2">Email</label>
+                    <input type="email" name="email" required
+                        class="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-400"
+                        value="<?= htmlspecialchars($response['fields']['email']) ?>">
+                </div>
+
+                <div class="mb-4">
+                    <label class="block text-gray-700 text-sm font-bold mb-2">Mot de passe</label>
+                    <input type="password" name="password" required
+                        class="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-400">
+                </div>
+
+                <div class="mb-4">
+                    <label class="block text-gray-700 text-sm font-bold mb-2">Groupes</label>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-2">
+                        <?php if (!empty($allGroups)): ?>
+                            <?php foreach ($allGroups as $group): ?>
+                                <label class="flex items-center space-x-2 p-2 hover:bg-gray-50 rounded">
+                                    <input type="checkbox" name="groups[]" 
+                                        value="<?= $group['group_id'] ?>"
+                                        <?= in_array($group['group_id'], $response['fields']['groups']) ? 'checked' : '' ?>
+                                        class="form-checkbox h-4 w-4 text-blue-600">
+                                    <span><?= htmlspecialchars($group['group_name']) ?></span>
+                                </label>
+                            <?php endforeach; ?>
+                        <?php else: ?>
+                            <div class="text-red-500">Aucun groupe disponible</div>
+                        <?php endif; ?>
+                    </div>
+                </div>
+
+                <div class="flex justify-end space-x-4 mt-6">
+                    <button type="button" onclick="window.cancelAdd()"
+                        class="px-4 py-2 text-gray-600 hover:text-gray-800 font-medium">
+                        Annuler
+                    </button>
+                    <button type="submit" 
+                        class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 font-medium">
+                        Créer l'utilisateur
+                    </button>
+                </div>
+            </form>
     </div>
+
+    <script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const addUserForm = document.getElementById('addUserForm');
+        const messageContainer = document.getElementById('messageContainer');
+
+        function showFormMessage(message, isError = false) {
+            messageContainer.innerHTML = '';
+            
+            const messageDiv = document.createElement('div');
+            messageDiv.className = isError 
+                ? 'bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4'
+                : 'bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded mb-4';
+            messageDiv.innerHTML = message;
+            messageContainer.appendChild(messageDiv);
+        }
+
+        addUserForm?.addEventListener('submit', function(e) {
+            e.preventDefault();
+            messageContainer.innerHTML = '';
+            const formData = new FormData(this);
+
+            fetch('home.php?section=users&item=add_user', {
+                method: 'POST',
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    showFormMessage(data.message || 'Utilisateur créé avec succès');
+                    this.reset();
+                    setTimeout(() => window.location.reload(), 1000);
+                } else {
+                    showFormMessage(data.error || 'Une erreur est survenue', true);
+                }
+            })
+            .catch(error => {
+                showFormMessage('Erreur lors de la création: ' + error.message, true);
+            });
+        });
+    });
+    </script>
 </body>
 </html>
 <?php
