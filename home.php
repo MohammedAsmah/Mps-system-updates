@@ -9,6 +9,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_GET['item']) && $_GET['item
     include __DIR__ . '/content/groups/add_group.php';
     exit();
 }
+// Handle add_article equests
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_GET['item']) && $_GET['item'] === 'add_article') {
+    include __DIR__ .'/content/Parametrage/products/add_article.php';
+    exit();
+}
 // Handle update_group requests
 if (isset($_GET['item']) && $_GET['item'] === 'update_group') {
     $file_path = __DIR__ . '/content/groups/update_group.php';
@@ -18,6 +23,17 @@ if (isset($_GET['item']) && $_GET['item'] === 'update_group') {
     } else {
         http_response_code(404);
         die("Update group file not found");
+    }
+}    
+// Handle update_article requests
+if (isset($_GET['item']) && $_GET['item'] === 'update_article') {
+    $file_path = __DIR__ . '/content/Parametrage/products/update_article.php';
+    
+    if (file_exists($file_path)) {
+        include $file_path;
+    } else {
+        http_response_code(404);
+        die("Update article file not found");
     }
 }
 // Handle update_user requests immediately
