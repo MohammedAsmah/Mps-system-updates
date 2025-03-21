@@ -128,11 +128,11 @@ if (isset($_POST['action'])) {
                                    class="text-blue-600 hover:text-blue-900 transition-colors duration-200">
                                     <i class="fas fa-edit"></i>
                                 </a>
-                                <a href="home.php?section=products&item=accessories&article_id=<?= $article['Article_id'] ?>" 
-                                   class="text-purple-600 hover:text-purple-900 transition-colors duration-200"
-                                   title="Gérer les accessoires">
+                                <button onclick="loadAccessories(<?= $article['Article_id'] ?>)"
+                                        class="text-purple-600 hover:text-purple-900 transition-colors duration-200"
+                                        title="Voir les accessoires">
                                     <i class="fas fa-puzzle-piece"></i>
-                                </a>
+                                </button>
                                 <button onclick="deleteArticle(<?= $article['Article_id'] ?>)" 
                                         class="text-red-600 hover:text-red-900 transition-colors duration-200">
                                     <i class="fas fa-trash"></i>
@@ -157,6 +157,7 @@ if (isset($_POST['action'])) {
 </div>
 
 <div id="editArticleFormContainer" style="display: none;"></div>
+<div id="accessoriesContainer" style="display: none;"></div>
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {
@@ -347,5 +348,34 @@ document.addEventListener('DOMContentLoaded', function() {
             updateArticlesList('');
         });
     }
+
+    // Add accessories handling
+    window.loadAccessories = function(articleId) {
+        const url = `home.php?section=Parametrage&item=article_accessories&id=${articleId}&partial=1`;
+        const accessoriesContainer = document.getElementById('accessoriesContainer');
+        
+        fetch(url, {
+            headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        })
+        .then(response => response.text())
+        .then(html => {
+            accessoriesContainer.innerHTML = html;
+            accessoriesContainer.style.display = 'block';
+            articleTableContainer.style.display = 'none';
+            addArticleFormContainer.style.display = 'none';
+            editArticleFormContainer.style.display = 'none';
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            showMessage('Error loading accessories: ' + error.message, true);
+        });
+    };
+
+    window.closeAccessories = function() {
+        document.getElementById('accessoriesContainer').style.display = 'none';
+        articleTableContainer.style.display = 'block';
+    };
+
+    // ...rest of existing code...
 });
 </script>

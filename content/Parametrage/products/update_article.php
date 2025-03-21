@@ -100,7 +100,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' &&
         // Handle accessories
         $conn->exec("DELETE FROM ArticleAccessoiries WHERE article_id = $articleId");
 
-        if (!empty($_POST['accessories']) && is_array($_POST['accessories'])) {
+        if (!empty($_POST['accessories'])) {
             $accessoryStmt = $conn->prepare("
                 INSERT INTO ArticleAccessoiries 
                 (article_id, Accessoire_id, quantity) 
@@ -108,11 +108,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' &&
             ");
 
             foreach ($_POST['accessories'] as $accessoireId => $data) {
-                $accessoireId = (int)$accessoireId;
-                $quantity = (int)($data['quantity'] ?? 1);
-                
-                if ($accessoireId > 0 && $quantity > 0) {
-                    $accessoryStmt->execute([$articleId, $accessoireId, $quantity]);
+                // Only process if 'active' is set and true
+                if (isset($data['active']) && $data['active'] === 'on') {
+                    $accessoireId = (int)$accessoireId;
+                    $quantity = (int)($data['quantity'] ?? 1);
+                    
+                    if ($accessoireId > 0 && $quantity > 0) {
+                        $accessoryStmt->execute([$articleId, $accessoireId, $quantity]);
+                    }
                 }
             }
         }
@@ -291,18 +294,20 @@ if (isset($_GET['partial']) && $_GET['partial'] == '1') {
                     </div>
                 </div>
 
-                <!-- Accessories Section with improved layout -->
+                <!-- Accessories Section -->
                 <div class="mb-8">
                     <h3 class="text-lg font-semibold mb-4 pb-2 border-b">Accessoires</h3>
                     <div class="grid grid-cols-3 gap-3">
-                        <?php foreach ($allAccessories as $accessory): ?>
+                        <?php foreach ($allAccessories as $accessory): 
+                            $isSelected = isset($selectedAccessories[$accessory['Accessoire_id']]);
+                        ?>
                             <div class="border rounded-lg p-3 bg-gray-50 hover:bg-white transition-colors duration-200">
                                 <div class="flex items-center justify-between">
                                     <label class="flex items-center space-x-2">
                                         <input type="checkbox" 
                                             name="accessories[<?= $accessory['Accessoire_id'] ?>][active]"
                                             class="accessory-checkbox h-4 w-4 text-blue-600 rounded"
-                                            <?= isset($selectedAccessories[$accessory['Accessoire_id']]) ? 'checked' : '' ?>>
+                                            <?= $isSelected ? 'checked' : '' ?>>
                                         <span class="text-sm font-medium"><?= htmlspecialchars($accessory['designation']) ?></span>
                                     </label>
                                     <div class="flex items-center space-x-2">
@@ -310,7 +315,9 @@ if (isset($_GET['partial']) && $_GET['partial'] == '1') {
                                             name="accessories[<?= $accessory['Accessoire_id'] ?>][quantity]"
                                             min="1" 
                                             value="<?= $selectedAccessories[$accessory['Accessoire_id']] ?? 1 ?>"
-                                            class="w-16 px-2 py-1 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-blue-400">
+                                            <?= !$isSelected ? 'disabled' : '' ?>
+                                            class="w-16 px-2 py-1 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-blue-400 
+                                                <?= !$isSelected ? 'bg-gray-100' : '' ?>">
                                     </div>
                                 </div>
                             </div>
@@ -335,6 +342,21 @@ if (isset($_GET['partial']) && $_GET['partial'] == '1') {
         document.addEventListener('DOMContentLoaded', function() {
             const form = document.querySelector('form');
             
+            // Handle accessories checkboxes
+            document.querySelectorAll('.accessory-checkbox').forEach(checkbox => {
+                const row = checkbox.closest('div.border');
+                const quantityInput = row.querySelector('input[type="number"]');
+                
+                checkbox.addEventListener('change', function() {
+                    if (quantityInput) {
+                        quantityInput.disabled = !this.checked;
+                        quantityInput.value = this.checked ? (quantityInput.value || 1) : 1;
+                        quantityInput.classList.toggle('bg-gray-100', !this.checked);
+                    }
+                });
+            });
+
+            // Form submission
             form?.addEventListener('submit', function(e) {
                 e.preventDefault();
                 const formData = new FormData(this);
