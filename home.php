@@ -14,6 +14,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_GET['item']) && $_GET['item
     include __DIR__ .'/content/Parametrage/products/add_article.php';
     exit();
 }
+// Handle add_accessory equests
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_GET['item']) && $_GET['item'] === 'add_accessory') {
+    include __DIR__ .'/content/Parametrage/accessories/add_accessory.php';
+    exit();
+}
+
+// Handle add_accessory requests
+if (($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_GET['partial'])) && 
+    isset($_GET['item']) && $_GET['item'] === 'accessories/add_accessory') {
+    include __DIR__ . '/content/Parametrage/accessories/add_accessory.php';
+    exit();
+}
+
+// Handle update_accessory requests
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_GET['item']) && $_GET['item'] === 'update_accessory') {
+    $file_path = __DIR__ . '/content/Parametrage/accessories/update_accessory.php';
+    if (file_exists($file_path)) {
+        include $file_path;
+        exit();
+    }
+}
+
+
 // Handle update_group requests
 if (isset($_GET['item']) && $_GET['item'] === 'update_group') {
     $file_path = __DIR__ . '/content/groups/update_group.php';
@@ -24,7 +47,17 @@ if (isset($_GET['item']) && $_GET['item'] === 'update_group') {
         http_response_code(404);
         die("Update group file not found");
     }
-}    
+}
+// Handle article accessories requests
+if (isset($_GET['item']) && $_GET['item'] === 'article_accessories') {
+    $file_path = __DIR__ . '/content/Parametrage/products/article_accessories.php';
+    if (file_exists($file_path)) {
+        include $file_path;
+    } else {
+        http_response_code(404);
+        die("article accessories file not found");
+    }
+} 
 // Handle update_article requests
 if (isset($_GET['item']) && $_GET['item'] === 'update_article') {
     $file_path = __DIR__ . '/content/Parametrage/products/update_article.php';
@@ -46,6 +79,17 @@ if (isset($_GET['item']) && $_GET['item'] === 'update_user') {
     } else {
         http_response_code(404);
         die("Update file not found");
+    }
+}
+
+// Handle accessories routes
+if (isset($_GET['item']) && strpos($_GET['item'], 'accessories/') === 0) {
+    $itemPath = substr($_GET['item'], strlen('accessories/'));
+    $file_path = __DIR__ . '/content/Parametrage/accessories/' . $itemPath . '.php';
+    
+    if (file_exists($file_path)) {
+        include $file_path;
+        exit();
     }
 }
 
