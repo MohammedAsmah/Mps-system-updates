@@ -20,16 +20,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_GET['item']) && $_GET['item
     exit();
 }
 
-// Handle add_accessory requests
-if (($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_GET['partial'])) && 
-    isset($_GET['item']) && $_GET['item'] === 'accessories/add_accessory') {
-    include __DIR__ . '/content/Parametrage/accessories/add_accessory.php';
-    exit();
-}
-
 // Handle update_accessory requests
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_GET['item']) && $_GET['item'] === 'update_accessory') {
     $file_path = __DIR__ . '/content/Parametrage/accessories/update_accessory.php';
+    if (file_exists($file_path)) {
+        include $file_path;
+        exit();
+    }
+}
+// Handle update_accessory requests
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_GET['item']) && $_GET['item'] === 'update_seller') {
+    $file_path = __DIR__ . '/content/Parametrage/sellers/update_seller.php';
     if (file_exists($file_path)) {
         include $file_path;
         exit();
