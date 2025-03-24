@@ -49,7 +49,7 @@ if (isset($_POST['action'])) {
 }
 ?>
 
-<div class="container mx-auto px-4">
+<div class="container mx-auto px-6 py-8 bg-gray-50">
     <?php if (isset($_SESSION['error_message'])): ?>
         <div id="errorMessage" class="message-fade bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4" style="opacity: 1">
             <?= htmlspecialchars($_SESSION['error_message']) ?>
@@ -64,12 +64,18 @@ if (isset($_POST['action'])) {
         <?php unset($_SESSION['success_message']); ?>
     <?php endif; ?>
 
-    <div class="flex justify-between items-center mb-6">
-        <h2 class="text-2xl font-bold text-gray-800">Liste des Articles</h2>
-        <div class="flex items-center space-x-4">
-            <!-- Modify the category filter form -->
-            <form id="categoryFilter" class="flex items-center">
-                <select name="category" id="categorySelect" class="form-select rounded-md border-gray-300 shadow-sm mr-2">
+    <div class="flex justify-between items-center mb-8">
+        <h2 class="text-3xl font-bold text-gray-800 flex items-center">
+            <span class="bg-blue-600 text-white p-2 rounded-lg mr-3">
+                <i class="fas fa-box"></i>
+            </span>
+            Liste des Articles
+        </h2>
+        <div class="flex items-center space-x-6">
+            <!-- Category filter form -->
+            <form id="categoryFilter" class="flex items-center bg-white rounded-lg shadow-sm p-2">
+                <select name="category" id="categorySelect" 
+                    class="form-select rounded-lg border-gray-300 focus:border-blue-500 focus:ring focus:ring-blue-200 transition-shadow duration-200">
                     <option value="">Toutes les catégories</option>
                     <?php foreach ($categories as $category): ?>
                         <option value="<?= $category['Categorie_id'] ?>" 
@@ -80,19 +86,20 @@ if (isset($_POST['action'])) {
                 </select>
                 <?php if ($selectedCategory): ?>
                     <button type="button" id="resetFilter" 
-                            class="text-sm text-gray-600 hover:text-gray-900">
-                        <i class="fas fa-times-circle"></i> Réinitialiser
+                            class="ml-2 text-gray-500 hover:text-gray-700 transition-colors duration-200">
+                        <i class="fas fa-times-circle"></i>
                     </button>
                 <?php endif; ?>
             </form>
             <!-- Existing Add Article button -->
-            <button id="toggleAddArticleForm" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg shadow-md transition duration-300 ease-in-out transform hover:scale-105">
+            <button id="toggleAddArticleForm" 
+                    class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg shadow-lg transition duration-300 ease-in-out transform hover:-translate-y-1 hover:shadow-xl flex items-center">
                 <i class="fas fa-plus mr-2"></i> Nouvel Article
             </button>
         </div>
     </div>
 
-    <div id="articleTableContainer" class="bg-white rounded-lg shadow-lg">
+    <div id="articleTableContainer" class="bg-white rounded-xl shadow-lg overflow-hidden border border-gray-200">
         <?php if (count($articles) > 0): ?>
         <div class="overflow-x-auto">
             <table class="min-w-full divide-y divide-gray-200">
@@ -206,12 +213,41 @@ document.addEventListener('DOMContentLoaded', function() {
 
     if (toggleAddArticleFormButton) {
         toggleAddArticleFormButton.addEventListener('click', function() {
-            addArticleFormContainer.style.display = 
-                addArticleFormContainer.style.display === 'none' ? 'block' : 'none';
-            articleTableContainer.style.display = 
-                addArticleFormContainer.style.display === 'none' ? 'block' : 'none';
-            editArticleFormContainer.style.display = 'none';
+            if (addArticleFormContainer.style.display === 'none') {
+                articleTableContainer.style.display = 'none';
+                editArticleFormContainer.style.display = 'none';
+                addArticleFormContainer.style.display = 'block';
+                this.innerHTML = '<i class="fas fa-times mr-2"></i>Annuler';
+                this.classList.remove('bg-blue-600', 'hover:bg-blue-700');
+                this.classList.add('bg-gray-600', 'hover:bg-gray-700');
+            } else {
+                resetContainers();
+                this.classList.remove('bg-gray-600', 'hover:bg-gray-700');
+                this.classList.add('bg-blue-600', 'hover:bg-blue-700');
+            }
         });
+    }
+
+    // Add resetContainers function:
+    function resetContainers() {
+        addArticleFormContainer.style.display = 'none';
+        editArticleFormContainer.style.display = 'none';
+        articleTableContainer.style.display = 'block';
+        
+        // Reset button text and colors
+        const toggleButton = document.getElementById('toggleAddArticleForm');
+        toggleButton.innerHTML = '<i class="fas fa-plus mr-2"></i>Nouvel Article';
+        toggleButton.classList.remove('bg-gray-600', 'hover:bg-gray-700');
+        toggleButton.classList.add('bg-blue-600', 'hover:bg-blue-700');
+    }
+
+    // Update cancel functions:
+    window.cancelAdd = function() {
+        resetContainers();
+    };
+
+    window.cancelEdit = function() {
+        resetContainers();
     }
 
     // Delete Article Function
@@ -298,13 +334,11 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Cancel functions
     window.cancelAdd = function() {
-        addArticleFormContainer.style.display = 'none';
-        articleTableContainer.style.display = 'block';
+        resetContainers();
     };
 
     window.cancelEdit = function() {
-        editArticleFormContainer.style.display = 'none';
-        articleTableContainer.style.display = 'block';
+        resetContainers();
     };
 
     // Add new category filter handling

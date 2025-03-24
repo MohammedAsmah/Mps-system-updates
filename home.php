@@ -20,6 +20,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_GET['item']) && $_GET['item
     exit();
 }
 
+// Handle add_seller POST requests
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_GET['item']) && $_GET['item'] === 'add_seller') {
+    include __DIR__ . '/content/Parametrage/sellers/add_seller.php';
+    exit();
+}
+
+// Handle add_bank POST requests
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_GET['item']) && $_GET['item'] === 'add_bank') {
+    include __DIR__ . '/content/Parametrage/banks/add_bank.php';
+    exit();
+}
+
 // Handle update_accessory requests
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_GET['item']) && $_GET['item'] === 'update_accessory') {
     $file_path = __DIR__ . '/content/Parametrage/accessories/update_accessory.php';
@@ -28,7 +40,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_GET['item']) && $_GET['item
         exit();
     }
 }
-// Handle update_accessory requests
+// Handle update_seller requests
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_GET['item']) && $_GET['item'] === 'update_seller') {
     $file_path = __DIR__ . '/content/Parametrage/sellers/update_seller.php';
     if (file_exists($file_path)) {
@@ -36,7 +48,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_GET['item']) && $_GET['item
         exit();
     }
 }
-
 
 // Handle update_group requests
 if (isset($_GET['item']) && $_GET['item'] === 'update_group') {
@@ -47,6 +58,18 @@ if (isset($_GET['item']) && $_GET['item'] === 'update_group') {
     } else {
         http_response_code(404);
         die("Update group file not found");
+    }
+}
+
+// Handle update_bank requests
+if (isset($_GET['item']) && $_GET['item'] === 'update_bank') {
+    $file_path = __DIR__ . '/content/Parametrage/banks/update_bank.php';
+    
+    if (file_exists($file_path)) {
+        include $file_path;
+    } else {
+        http_response_code(404);
+        die("Update bank file not found");
     }
 }
 // Handle article accessories requests
@@ -245,28 +268,37 @@ if ($currentItem && isset($sidebar[$currentItem])) {
     <title>data2mjp ui - Home</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
+    <style>
+        .gradient-bg {
+            background: linear-gradient(120deg, #1e40af, #3b82f6);
+        }
+        .hover-scale:hover {
+            transform: scale(1.02);
+            transition: transform 0.2s ease;
+        }
+    </style>
 </head>
-<body class="bg-gray-100">
+<body class="bg-gray-50">
     <div class="min-h-screen flex flex-col">
-        <!-- Top Navigation Bar using DB-driven menu -->
-        <header class="bg-blue-600 h-24 text-white shadow-md fixed top-0 left-0 right-0 z-10">
-            <div class="mx-auto px-4">
+        <!-- Top Navigation Bar -->
+        <header class="gradient-bg h-24 text-white shadow-lg fixed top-0 left-0 right-0 z-10">
+            <div class="mx-auto px-6">
                 <div class="flex justify-between gap-5 items-center py-2">
-                    <div class="flex gap-2 items-center">
-                        <div class="text-xl font-bold">
-                            <?php echo ($user_login) ?> <br> <?php $_SESSION['is_admin'] ; echo date("y-m-d"); ?>
+                    <div class="flex gap-4 items-center">
+                        <div class="text-xl font-bold bg-white/10 p-3 rounded-lg">
+                            <?php echo ($user_login) ?> <br> <?php $_SESSION['is_admin']; echo date("y-m-d"); ?>
                         </div>
-                        <a href="logout.php" class="bg-red-500 hover:bg-red-600 text-white px-3 py-2 rounded">
-                            Logout
+                        <a href="logout.php" class="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg transition-colors duration-200 hover:shadow-md">
+                            <i class="fas fa-sign-out-alt mr-2"></i>Logout
                         </a>
                     </div>
-                    <nav>
-                        <ul class="flex space-x-4 flex-wrap">
+                    <nav class="flex-1 ml-8">
+                        <ul class="flex space-x-4 flex-wrap justify-end">
                             <?php foreach ($navigation as $key => $item): ?>
                                 <li class="my-2">
                                     <a href="?section=<?php echo $key; ?>" 
-                                       class="px-3 py-2 mb-5 rounded hover:bg-blue-700 transition-colors
-                                              <?php echo $currentSection === $key ? 'bg-blue-800' : ''; ?>">
+                                       class="px-4 py-2 rounded-lg hover:bg-white/20 transition-all duration-200
+                                              <?php echo $currentSection === $key ? 'bg-white/25 shadow-md' : ''; ?>">
                                         <?php echo $item['title']; ?>
                                     </a>
                                 </li>
@@ -277,19 +309,19 @@ if ($currentItem && isset($sidebar[$currentItem])) {
             </div>
         </header>
 
-        <div class="flex pt-16 mt-8">
+        <div class="flex pt-24">
             <!-- Sidebar -->
-            <aside class="bg-gray-800 text-white w-64 fixed left-0 h-full pt-2 z-10">
+            <aside class="bg-gray-800 text-white w-64 fixed left-0 h-full pt-4 shadow-xl z-10">
                 <nav class="px-4 py-2">
-                    <h2 class="text-lg font-semibold mb-4 text-blue-300">
+                    <h2 class="text-lg font-semibold mb-6 text-blue-300 border-b border-blue-500/30 pb-2">
                         <?php echo $currentSection; ?> Menu
                     </h2>
                     <ul class="space-y-2">
                         <?php foreach ($sidebar as $key => $item): ?>
                             <li>
                                 <a href="?section=<?php echo $currentSection; ?>&item=<?php echo $key; ?>" 
-                                   class="block px-4 py-2 rounded transition-colors
-                                          <?php echo $currentItem === $key ? 'bg-blue-600' : 'hover:bg-gray-700'; ?>">
+                                   class="block px-4 py-2.5 rounded-lg transition-all duration-200 hover-scale
+                                          <?php echo $currentItem === $key ? 'bg-blue-600 shadow-md' : 'hover:bg-gray-700'; ?>">
                                     <?php echo $item['title']; ?>
                                 </a>
                             </li>
@@ -298,9 +330,10 @@ if ($currentItem && isset($sidebar[$currentItem])) {
                 </nav>
             </aside>
             <!-- Main Content -->
-            <main class="flex-1 ml-64 p-6 overflow-y-auto">
-                <div class="bg-white rounded-lg shadow-md p-6">
-                    <h1 class="text-2xl font-bold mb-4">
+            <main class="flex-1 ml-64 p-8 overflow-y-auto">
+                <div class="bg-white rounded-xl shadow-sm p-8 hover:shadow-md transition-shadow duration-200">
+                    <h1 class="text-2xl font-bold mb-6 text-gray-800 border-b pb-4">
+                        <?php echo $currentSection ? $currentSection : 'Dashboard'; ?>
                     </h1>
                     <div class="content">
                         <?php 

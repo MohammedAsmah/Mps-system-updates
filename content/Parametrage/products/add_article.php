@@ -31,14 +31,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' &&
         $checkArticle = $conn->prepare("SELECT COUNT(*) FROM Articles WHERE designation = ?");
         $checkArticle->execute([$_POST['designation']]);
         if ($checkArticle->fetchColumn() > 0) {
-            throw new Exception("Cette désignation existe déjà");
+            $conn->rollBack();
+            echo json_encode(['success' => false, 'error' => "Cette désignation existe déjà"]);
+            exit();
         }
 
         // Check duplicate barcode
         $checkBarcode = $conn->prepare("SELECT COUNT(*) FROM Articles WHERE bardoce_p = ?");
         $checkBarcode->execute([$_POST['bardoce_p']]);
         if ($checkBarcode->fetchColumn() > 0) {
-            throw new Exception("Ce code-barres existe déjà");
+            $conn->rollBack();
+            echo json_encode(['success' => false, 'error' => "Ce code-barres existe déjà"]);
+            exit();
         }
 
         // Insert article
@@ -62,13 +66,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' &&
             $_POST['categorie_id'] ?? null
         ]);
 
+        $articleId = $conn->lastInsertId();
+
+        // Handle accessories if present
+        if (isset($_POST['accessories']) && is_array($_POST['accessories'])) {
+            $accessoryStmt = $conn->prepare("
+                INSERT INTO ArticleAccessoiries (article_id, Accessoire_id, quantity)
+                VALUES (?, ?, ?)
+            ");
+
+            foreach ($_POST['accessories'] as $accessory) {
+                $accessoryStmt->execute([
+                    $articleId,
+                    $accessory['id'],
+                    $accessory['quantity']
+                ]);
+            }
+        }
+
         $conn->commit();
         echo json_encode(['success' => true, 'message' => "Article créé avec succès"]);
+        exit();
+        
     } catch (Exception $e) {
         $conn->rollBack();
         echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+        exit();
     }
-    exit();
 }
 
 // Initialize response
@@ -84,6 +108,15 @@ try {
     $categories = $catStmt->fetchAll();
 } catch (PDOException $e) {
     $response['error'] = "Erreur de chargement des catégories: " . $e->getMessage();
+}
+
+// Fetch accessories
+try {
+    $accStmt = $conn->prepare("SELECT Accessoire_id, designation FROM Accessoires ORDER BY designation");
+    $accStmt->execute();
+    $accessories = $accStmt->fetchAll();
+} catch (PDOException $e) {
+    $response['error'] = "Erreur de chargement des accessoires: " . $e->getMessage();
 }
 
 // Display form if not AJAX
@@ -183,6 +216,32 @@ if (!isset($_SERVER['HTTP_X_REQUESTED_WITH']) || strtolower($_SERVER['HTTP_X_REQ
                 <input type="number" step="0.01" name="poids_avec_emballage"
                     class="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-400">
             </div>
+
+            <!-- Add this before the submit button -->
+            <div class="col-span-2 mb-4">
+                <h3 class="text-lg font-semibold mb-2">Accessoires</h3>
+                <div class="flex space-x-2 mb-2">
+                    <select id="accessorySelect" class="flex-1 px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-400">
+                        <option value="">Sélectionner un accessoire</option>
+                        <?php foreach ($accessories as $accessory): ?>
+                            <option value="<?= $accessory['Accessoire_id'] ?>" data-name="<?= htmlspecialchars($accessory['designation']) ?>">
+                                <?= htmlspecialchars($accessory['designation']) ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                    <input type="number" id="accessoryQuantity" min="1" value="1" 
+                        class="w-24 px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-400"
+                        placeholder="Qté">
+                    <button type="button" onclick="addAccessory()" 
+                        class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700">
+                        Ajouter
+                    </button>
+                </div>
+                <div id="selectedAccessories" class="space-y-2">
+                    <!-- Selected accessories will be displayed here -->
+                </div>
+            </div>
+
         </div>
 
         <div class="flex justify-end space-x-4 mt-6">
@@ -198,6 +257,54 @@ if (!isset($_SERVER['HTTP_X_REQUESTED_WITH']) || strtolower($_SERVER['HTTP_X_REQ
     </form>
 
     <script>
+    let selectedAccessories = [];
+
+    function addAccessory() {
+        const select = document.getElementById('accessorySelect');
+        const quantity = document.getElementById('accessoryQuantity');
+        const accessoryId = select.value;
+        const accessoryName = select.options[select.selectedIndex].dataset.name;
+        
+        if (!accessoryId) {
+            alert('Veuillez sélectionner un accessoire');
+            return;
+        }
+
+        const accessory = {
+            id: accessoryId,
+            name: accessoryName,
+            quantity: parseInt(quantity.value, 10)
+        };
+
+        selectedAccessories.push(accessory);
+        displayAccessories();
+        select.value = '';
+        quantity.value = '1';
+    }
+
+    function removeAccessory(index) {
+        selectedAccessories.splice(index, 1);
+        displayAccessories();
+    }
+
+    function displayAccessories() {
+        const container = document.getElementById('selectedAccessories');
+        container.innerHTML = selectedAccessories.map((acc, index) => `
+            <div class="flex items-center justify-between p-2 bg-gray-50 rounded border border-gray-200">
+                <span class="font-medium">${acc.name}</span>
+                <div class="flex items-center space-x-4">
+                    <span class="text-gray-600">Quantité: ${acc.quantity}</span>
+                    <button type="button" onclick="removeAccessory(${index})" 
+                        class="text-red-600 hover:text-red-800 px-2">
+                        ×
+                    </button>
+                </div>
+                <input type="hidden" name="accessories[${index}][id]" value="${acc.id}">
+                <input type="hidden" name="accessories[${index}][quantity]" value="${acc.quantity}">
+            </div>
+        `).join('');
+    }
+
     document.addEventListener('DOMContentLoaded', function() {
         const addArticleForm = document.querySelector('#addArticleForm');
         const messageContainer = document.getElementById('messageContainer');
@@ -215,6 +322,7 @@ if (!isset($_SERVER['HTTP_X_REQUESTED_WITH']) || strtolower($_SERVER['HTTP_X_REQ
         addArticleForm?.addEventListener('submit', function(e) {
             e.preventDefault();
             const formData = new FormData(this);
+            formData.append('accessories', JSON.stringify(selectedAccessories));
 
             fetch('home.php?section=articles&item=add_article', {
                 method: 'POST',
@@ -223,22 +331,16 @@ if (!isset($_SERVER['HTTP_X_REQUESTED_WITH']) || strtolower($_SERVER['HTTP_X_REQ
                 },
                 body: formData
             })
-            .then(response => response.text().then(text => {
-                try {
-                    return JSON.parse(text);
-                } catch (error) {
-                    console.error("JSON parsing error:", error);
-                    console.log("Raw response:", text);
-                    throw new Error("Invalid JSON response from server");
-                }
-            }))
+            .then(response => response.json())
             .then(data => {
                 if (data.success) {
-                    showFormMessage(data.message || 'Article créé avec succès');
+                    showFormMessage(data.message);
+                    selectedAccessories = [];
+                    displayAccessories();
                     this.reset();
-                    setTimeout(() => window.location.reload(), 1000);
+                    setTimeout(() => window.location.reload(), 1500);
                 } else {
-                    showFormMessage(data.error || 'Une erreur est survenue', true);
+                    showFormMessage(data.error, true);
                 }
             })
             .catch(error => {

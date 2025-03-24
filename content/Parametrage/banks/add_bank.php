@@ -8,36 +8,36 @@ require_once $_SERVER['DOCUMENT_ROOT'] . '/mps_updated_version/db_connect.php';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
         // Validate required fields
-        $required = ['designation', 'commission', 'plafond'];
+        $required = ['bank_name', 'line_oc', 'line_aval'];
         foreach ($required as $field) {
             if (!isset($_POST[$field]) || trim($_POST[$field]) === '') {
                 throw new Exception("Le champ $field est obligatoire");
             }
         }
 
-        // Check for duplicate designation
-        $stmt = $conn->prepare("SELECT COUNT(*) FROM Sellers WHERE designation = ?");
-        $stmt->execute([trim($_POST['designation'])]);
+        // Check for duplicate bank name
+        $stmt = $conn->prepare("SELECT COUNT(*) FROM banks WHERE bank_name = ?");
+        $stmt->execute([trim($_POST['bank_name'])]);
         if ($stmt->fetchColumn() > 0) {
-            throw new Exception("Un vendeur avec cette désignation existe déjà");
+            throw new Exception("Une banque avec ce nom existe déjà");
         }
 
-        // Insert new seller
+        // Insert new bank
         $stmt = $conn->prepare("
-            INSERT INTO Sellers (designation, commission, plafond) 
-            VALUES (:designation, :commission, :plafond)
+            INSERT INTO banks (bank_name, line_oc, line_aval) 
+            VALUES (:bank_name, :line_oc, :line_aval)
         ");
         
         $result = $stmt->execute([
-            ':designation' => trim($_POST['designation']),
-            ':commission' => (float)$_POST['commission'],
-            ':plafond' => (float)$_POST['plafond']
+            ':bank_name' => trim($_POST['bank_name']),
+            ':line_oc' => (float)$_POST['line_oc'],
+            ':line_aval' => (float)$_POST['line_aval']
         ]);
 
         if ($result) {
-            echo json_encode(['success' => true, 'message' => 'Vendeur ajouté avec succès']);
+            echo json_encode(['success' => true, 'message' => 'Banque ajoutée avec succès']);
         } else {
-            throw new Exception("Erreur lors de l'ajout du vendeur");
+            throw new Exception("Erreur lors de l'ajout de la banque");
         }
 
     } catch (Exception $e) {
@@ -47,36 +47,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 ?>
 
-<form id="addSellerForm" method="POST" class="bg-white p-8 rounded-xl shadow-lg">
+<form id="addBankForm" method="POST" class="bg-white p-8 rounded-xl shadow-lg">
     <div class="flex items-center mb-8 pb-4 border-b border-gray-200">
         <div class="bg-blue-100 p-3 rounded-full mr-4">
-            <i class="fas fa-user-plus text-blue-600 text-xl"></i>
+            <i class="fas fa-university text-blue-600 text-xl"></i>
         </div>
-        <h3 class="text-2xl font-bold text-gray-800">Ajouter un Vendeur</h3>
+        <h3 class="text-2xl font-bold text-gray-800">Ajouter une Banque</h3>
     </div>
 
     <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div class="mb-4">
             <label class="block text-gray-700 text-sm font-bold mb-2">
-                <i class="fas fa-tag mr-2 text-blue-500"></i>Désignation *
+                <i class="fas fa-building mr-2 text-blue-500"></i>Nom de la Banque *
             </label>
-            <input type="text" name="designation" required
+            <input type="text" name="bank_name" required
                 class="w-full px-4 py-3 rounded-lg border-2 border-gray-200 focus:border-blue-400 focus:outline-none transition-colors">
         </div>
 
         <div class="mb-4">
             <label class="block text-gray-700 text-sm font-bold mb-2">
-                <i class="fas fa-percentage mr-2 text-green-500"></i>Commission (%) *
+                <i class="fas fa-credit-card mr-2 text-green-500"></i>Ligne OC (Dh) *
             </label>
-            <input type="number" step="0.01" name="commission" required
+            <input type="number" step="0.01" min="0" name="line_oc" required
                 class="w-full px-4 py-3 rounded-lg border-2 border-gray-200 focus:border-green-400 focus:outline-none transition-colors">
         </div>
 
         <div class="mb-4">
             <label class="block text-gray-700 text-sm font-bold mb-2">
-                <i class="fas fa-coins mr-2 text-yellow-500"></i>Plafond (Dh) *
+                <i class="fas fa-money-check mr-2 text-yellow-500"></i>Ligne Aval (Dh) *
             </label>
-            <input type="number" step="0.01" name="plafond" required
+            <input type="number" step="0.01" min="0" name="line_aval" required
                 class="w-full px-4 py-3 rounded-lg border-2 border-gray-200 focus:border-yellow-400 focus:outline-none transition-colors">
         </div>
     </div>
@@ -94,11 +94,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 </form>
 
 <script>
-document.getElementById('addSellerForm').addEventListener('submit', function(e) {
+document.getElementById('addBankForm').addEventListener('submit', function(e) {
     e.preventDefault();
     const formData = new FormData(this);
 
-    fetch('content/Parametrage/sellers/add_seller.php', {
+    fetch('content/Parametrage/banks/add_bank.php', {
         method: 'POST',
         body: formData
     })
@@ -115,7 +115,7 @@ document.getElementById('addSellerForm').addEventListener('submit', function(e) 
     })
     .catch(error => {
         console.error('Error:', error);
-        showMessage('Erreur lors de l\'ajout du vendeur', true);
+        showMessage('Erreur lors de l\'ajout de la banque', true);
     });
 });
 </script>

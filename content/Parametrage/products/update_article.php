@@ -100,25 +100,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' &&
         // Handle accessories
         $conn->exec("DELETE FROM ArticleAccessoiries WHERE article_id = $articleId");
 
-        if (!empty($_POST['accessories'])) {
-            $accessoryStmt = $conn->prepare("
-                INSERT INTO ArticleAccessoiries 
-                (article_id, Accessoire_id, quantity) 
-                VALUES (?, ?, ?)
-            ");
+if (isset($_POST['accessories']) && is_array($_POST['accessories'])) {
+    $accessoryStmt = $conn->prepare("
+        INSERT INTO ArticleAccessoiries 
+        (article_id, Accessoire_id, quantity) 
+        VALUES (?, ?, ?)
+    ");
 
-            foreach ($_POST['accessories'] as $accessoireId => $data) {
-                // Only process if 'active' is set and true
-                if (isset($data['active']) && $data['active'] === 'on') {
-                    $accessoireId = (int)$accessoireId;
-                    $quantity = (int)($data['quantity'] ?? 1);
-                    
-                    if ($accessoireId > 0 && $quantity > 0) {
-                        $accessoryStmt->execute([$articleId, $accessoireId, $quantity]);
-                    }
-                }
-            }
+    foreach ($_POST['accessories'] as $accessory) {
+        // Ensure numeric values
+        $accessoryId = (int)($accessory['id'] ?? 0);
+        $quantity = (int)($accessory['quantity'] ?? 1);
+        
+        if ($accessoryId > 0 && $quantity > 0) {
+            $accessoryStmt->execute([$articleId, $accessoryId, $quantity]);
         }
+    }
+}
 
         // Commit transaction
         $conn->commit();
@@ -172,23 +170,28 @@ if (isset($_GET['partial']) && $_GET['partial'] == '1') {
         ")->fetchAll(PDO::FETCH_ASSOC);
 
         // Fetch accessories
-        $allAccessories = $conn->query("
-            SELECT * 
-            FROM Accessoires 
-            ORDER BY designation
-        ")->fetchAll(PDO::FETCH_ASSOC);
+        try {
+            $accStmt = $conn->prepare("SELECT Accessoire_id, designation FROM Accessoires ORDER BY designation");
+            $accStmt->execute();
+            $accessories = $accStmt->fetchAll();
 
-        // Fetch selected accessories
-        $selectedAccessories = $conn->query("
-            SELECT Accessoire_id, quantity 
-            FROM ArticleAccessoiries 
-            WHERE article_id = $articleId
-        ")->fetchAll(PDO::FETCH_KEY_PAIR);
+            // Fetch existing accessories for this article
+            $existingAccStmt = $conn->prepare("
+                SELECT a.Accessoire_id, a.designation, aa.quantity 
+                FROM ArticleAccessoiries aa 
+                JOIN Accessoires a ON aa.Accessoire_id = a.Accessoire_id 
+                WHERE aa.article_id = ?
+            ");
+            $existingAccStmt->execute([$article['Article_id']]);
+            $existingAccessories = $existingAccStmt->fetchAll();
+        } catch (PDOException $e) {
+            $response['error'] = "Erreur de chargement des accessoires: " . $e->getMessage();
+        }
 
         // Display form
         ?>
         <div class="container mx-auto p-6">
-            <form method="POST" class="bg-white p-6 rounded-lg shadow-lg">
+            <form method="POST" class="bg-white p-6 rounded-lg shadow-lg" id="updateArticleForm">
                 <div class="flex justify-between items-center mb-6">
                     <h2 class="text-2xl font-bold text-gray-800">
                         Modifier l'article: <?= htmlspecialchars($article['designation']) ?>
@@ -295,33 +298,28 @@ if (isset($_GET['partial']) && $_GET['partial'] == '1') {
                 </div>
 
                 <!-- Accessories Section -->
-                <div class="mb-8">
-                    <h3 class="text-lg font-semibold mb-4 pb-2 border-b">Accessoires</h3>
-                    <div class="grid grid-cols-3 gap-3">
-                        <?php foreach ($allAccessories as $accessory): 
-                            $isSelected = isset($selectedAccessories[$accessory['Accessoire_id']]);
-                        ?>
-                            <div class="border rounded-lg p-3 bg-gray-50 hover:bg-white transition-colors duration-200">
-                                <div class="flex items-center justify-between">
-                                    <label class="flex items-center space-x-2">
-                                        <input type="checkbox" 
-                                            name="accessories[<?= $accessory['Accessoire_id'] ?>][active]"
-                                            class="accessory-checkbox h-4 w-4 text-blue-600 rounded"
-                                            <?= $isSelected ? 'checked' : '' ?>>
-                                        <span class="text-sm font-medium"><?= htmlspecialchars($accessory['designation']) ?></span>
-                                    </label>
-                                    <div class="flex items-center space-x-2">
-                                        <input type="number" 
-                                            name="accessories[<?= $accessory['Accessoire_id'] ?>][quantity]"
-                                            min="1" 
-                                            value="<?= $selectedAccessories[$accessory['Accessoire_id']] ?? 1 ?>"
-                                            <?= !$isSelected ? 'disabled' : '' ?>
-                                            class="w-16 px-2 py-1 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-blue-400 
-                                                <?= !$isSelected ? 'bg-gray-100' : '' ?>">
-                                    </div>
-                                </div>
-                            </div>
-                        <?php endforeach; ?>
+                <div class="col-span-2 mb-4">
+                    <h3 class="text-lg font-semibold mb-2">Accessoires</h3>
+                    <div class="flex space-x-2 mb-2">
+                        <select id="accessorySelect" class="flex-1 px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-400">
+                            <option value="">Sélectionner un accessoire</option>
+                            <?php foreach ($accessories as $accessory): ?>
+    <option value="<?= $accessory['Accessoire_id'] ?>" 
+        data-name="<?= htmlspecialchars($accessory['designation']) ?>">
+        <?= htmlspecialchars($accessory['designation']) ?>
+    </option>
+<?php endforeach; ?>
+                        </select>
+                        <input type="number" id="accessoryQuantity" min="1" value="1" 
+                            class="w-24 px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-400"
+                            placeholder="Qté">
+                        <button type="button" onclick="addAccessory()" 
+                            class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700">
+                            Ajouter
+                        </button>
+                    </div>
+                    <div id="selectedAccessories" class="space-y-2">
+                        <!-- Selected accessories will be displayed here -->
                     </div>
                 </div>
 
@@ -339,79 +337,109 @@ if (isset($_GET['partial']) && $_GET['partial'] == '1') {
         </div>
 
         <script>
+        let selectedAccessories = [
+            <?php foreach ($existingAccessories as $acc): ?>
+            {
+                id: '<?= $acc['Accessoire_id'] ?>',
+                name: <?= json_encode($acc['designation']) ?>,
+                quantity: <?= $acc['quantity'] ?>
+            },
+            <?php endforeach; ?>
+        ];
+
+        function addAccessory() {
+    const select = document.getElementById('accessorySelect');
+    const quantity = document.getElementById('accessoryQuantity');
+    const accessoryId = select.value;
+    
+    if (accessoryId === "") {
+        alert('Veuillez sélectionner un accessoire');
+        return;
+    }
+
+    const accessoryName = select.options[select.selectedIndex].dataset.name;
+
+    // Check if accessory already exists - important change here
+    if (window.selectedAccessories.some(acc => acc.id === accessoryId)) {
+        alert('Cet accessoire est déjà ajouté');
+        return;
+    }
+
+    const accessory = {
+        id: accessoryId,
+        name: accessoryName,
+        quantity: parseInt(quantity.value, 10) || 1
+    };
+
+    window.selectedAccessories.push(accessory);
+    displayAccessories();
+    select.value = '';
+    quantity.value = '1';
+}
+
+function removeAccessory(index) {
+    window.selectedAccessories.splice(index, 1);
+    displayAccessories();
+}
+
+function displayAccessories() {
+    const container = document.getElementById('selectedAccessories');
+    container.innerHTML = window.selectedAccessories.map((acc, index) => `
+        <div class="flex items-center justify-between p-2 bg-gray-50 rounded border border-gray-200">
+            <span class="font-medium">${acc.name}</span>
+            <div class="flex items-center space-x-4">
+                <span class="text-gray-600">Quantité: ${acc.quantity}</span>
+                <button type="button" onclick="removeAccessory(${index})" 
+                    class="text-red-600 hover:text-red-800 px-2">
+                    ×
+                </button>
+            </div>
+        </div>
+    `).join('');
+}
+
+        // Initialize accessories display
+        displayAccessories();
+
         document.addEventListener('DOMContentLoaded', function() {
-            const form = document.querySelector('form');
-            
-            // Handle accessories checkboxes
-            document.querySelectorAll('.accessory-checkbox').forEach(checkbox => {
-                const row = checkbox.closest('div.border');
-                const quantityInput = row.querySelector('input[type="number"]');
-                
-                checkbox.addEventListener('change', function() {
-                    if (quantityInput) {
-                        quantityInput.disabled = !this.checked;
-                        quantityInput.value = this.checked ? (quantityInput.value || 1) : 1;
-                        quantityInput.classList.toggle('bg-gray-100', !this.checked);
-                    }
-                });
-            });
+    const updateArticleForm = document.querySelector('#updateArticleForm');
+    
+    // Display existing accessories on page load
+    displayAccessories();
+    
+    updateArticleForm?.addEventListener('submit', function(e) {
+        e.preventDefault();
+        const formData = new FormData(this);
+        
+        // Remove any existing accessories fields that might have been added by displayAccessories
+        const existingInputs = document.querySelectorAll('input[name^="accessories"]');
+        existingInputs.forEach(input => input.remove());
+        
+        // Add the accessories as JSON
+        formData.append('accessories', JSON.stringify(window.selectedAccessories));
 
-            // Form submission
-            form?.addEventListener('submit', function(e) {
-                e.preventDefault();
-                const formData = new FormData(this);
-
-                fetch('home.php?section=Parametrage&item=update_article', {
-                    method: 'POST',
-                    headers: {
-                        'X-Requested-With': 'XMLHttpRequest'
-                    },
-                    body: formData
-                })
-                .then(response => response.text())
-                .then(text => {
-                    try {
-                        return JSON.parse(text);
-                    } catch (e) {
-                        console.error('Raw response:', text);
-                        throw new Error('Invalid JSON response');
-                    }
-                })
-                .then(data => {
-                    if (data.success) {
-                        window.showMessage(data.message || 'Article mis à jour avec succès');
-                        setTimeout(() => window.location.reload(), 2000);
-                    } else {
-                        window.showMessage(data.error || 'Une erreur est survenue', true);
-                    }
-                })
-                .catch(error => {
-                    window.showMessage('Erreur lors de la mise à jour: ' + error.message, true);
-                    console.error('Error:', error);
-                });
-            });
-
-            // Initialize quantities for all accessories
-            document.querySelectorAll('.accessory-checkbox').forEach(checkbox => {
-                const row = checkbox.closest('div.border');
-                const quantityInput = row.querySelector('input[type="number"]');
-                if (quantityInput) {
-                    quantityInput.disabled = !checkbox.checked;
-                    if (!checkbox.checked) {
-                        quantityInput.value = 1;
-                    }
-                }
-
-                checkbox.addEventListener('change', function() {
-                    if (quantityInput) {
-                        quantityInput.disabled = !this.checked;
-                        if (!this.checked) {
-                            quantityInput.value = 1;
-                        }
-                    }
-                });
-            });
+        fetch('home.php?section=Parametrage&item=update_article', {
+            method: 'POST',
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest'
+            },
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                window.showMessage(data.message || 'Article mis à jour avec succès');
+                setTimeout(() => window.location.reload(), 2000);
+            } else {
+                window.showMessage(data.error || 'Une erreur est survenue', true);
+            }
+        })
+        .catch(error => {
+            window.showMessage('Erreur lors de la mise à jour: ' + error.message, true);
+            console.error('Error:', error);
         });
+    });
+});
         </script>
         <?php
 
