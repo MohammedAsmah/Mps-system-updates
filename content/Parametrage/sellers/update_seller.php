@@ -4,7 +4,7 @@ if (session_status() === PHP_SESSION_NONE) {
 }
 
 // Update the include path to use the correct location
-require_once $_SERVER['DOCUMENT_ROOT'] . '/mps_udated_version/db_connect.php';
+require_once $_SERVER['DOCUMENT_ROOT'] . '/mps_updated_version/db_connect.php';
 
 // Add connection check
 if (!isset($conn)) {
@@ -117,7 +117,7 @@ if (isset($_GET['partial']) && $_GET['partial'] == '1') {
 
         // Output form
         ?>
-        <form method="POST" id="editSellerForm" class="bg-white p-8 rounded-xl shadow-lg max-w-4xl mx-auto">
+        <div class="bg-white p-8 rounded-xl shadow-lg">
             <div class="flex items-center mb-8 pb-4 border-b border-gray-200">
                 <div class="bg-blue-100 p-3 rounded-full mr-4">
                     <i class="fas fa-user-edit text-blue-600 text-xl"></i>
@@ -125,48 +125,50 @@ if (isset($_GET['partial']) && $_GET['partial'] == '1') {
                 <h3 class="text-2xl font-bold text-gray-800">Modifier le Vendeur</h3>
             </div>
 
-            <input type="hidden" name="seller_id" value="<?= $seller['Seller_id'] ?>">
-            
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div class="mb-4">
-                    <label class="block text-gray-700 text-sm font-bold mb-2">
-                        <i class="fas fa-tag mr-2 text-blue-500"></i>Désignation *
-                    </label>
-                    <input type="text" name="designation" required
-                        class="w-full px-4 py-3 rounded-lg border-2 border-gray-200 focus:border-blue-400 focus:outline-none transition-colors"
-                        value="<?= htmlspecialchars($seller['designation']) ?>">
+            <form method="POST" id="editSellerForm" class="max-w-4xl mx-auto">
+                <input type="hidden" name="seller_id" value="<?= $seller['Seller_id'] ?>">
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div class="mb-4">
+                        <label class="block text-gray-700 text-sm font-bold mb-2">
+                            <i class="fas fa-tag mr-2 text-blue-500"></i>Désignation *
+                        </label>
+                        <input type="text" name="designation" required
+                            class="w-full px-4 py-3 rounded-lg border-2 border-gray-200 focus:border-blue-400 focus:outline-none transition-colors"
+                            value="<?= htmlspecialchars($seller['designation']) ?>">
+                    </div>
+
+                    <div class="mb-4">
+                        <label class="block text-gray-700 text-sm font-bold mb-2">
+                            <i class="fas fa-percentage mr-2 text-green-500"></i>Commission (%) *
+                        </label>
+                        <input type="number" step="0.01" name="commission" required
+                            class="w-full px-4 py-3 rounded-lg border-2 border-gray-200 focus:border-green-400 focus:outline-none transition-colors"
+                            value="<?= htmlspecialchars($seller['commission']) ?>">
+                    </div>
+
+                    <div class="mb-4">
+                        <label class="block text-gray-700 text-sm font-bold mb-2">
+                            <i class="fas fa-coins mr-2 text-yellow-500"></i>Plafond (Dh) *
+                        </label>
+                        <input type="number" step="0.01" name="plafond" required
+                            class="w-full px-4 py-3 rounded-lg border-2 border-gray-200 focus:border-yellow-400 focus:outline-none transition-colors"
+                            value="<?= htmlspecialchars($seller['plafond']) ?>">
+                    </div>
                 </div>
 
-                <div class="mb-4">
-                    <label class="block text-gray-700 text-sm font-bold mb-2">
-                        <i class="fas fa-percentage mr-2 text-green-500"></i>Commission (%) *
-                    </label>
-                    <input type="number" step="0.01" name="commission" required
-                        class="w-full px-4 py-3 rounded-lg border-2 border-gray-200 focus:border-green-400 focus:outline-none transition-colors"
-                        value="<?= htmlspecialchars($seller['commission']) ?>">
+                <div class="flex justify-end space-x-4 mt-8 pt-4 border-t border-gray-200">
+                    <button type="button" onclick="cancelEdit()"
+                        class="px-6 py-3 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 font-medium transition-colors duration-200">
+                        <i class="fas fa-times mr-2"></i>Annuler
+                    </button>
+                    <button type="submit"
+                        class="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium transition-colors duration-200">
+                        <i class="fas fa-save mr-2"></i>Mettre à jour
+                    </button>
                 </div>
-
-                <div class="mb-4">
-                    <label class="block text-gray-700 text-sm font-bold mb-2">
-                        <i class="fas fa-coins mr-2 text-yellow-500"></i>Plafond (Dh) *
-                    </label>
-                    <input type="number" step="0.01" name="plafond" required
-                        class="w-full px-4 py-3 rounded-lg border-2 border-gray-200 focus:border-yellow-400 focus:outline-none transition-colors"
-                        value="<?= htmlspecialchars($seller['plafond']) ?>">
-                </div>
-            </div>
-
-            <div class="flex justify-end space-x-4 mt-8 pt-4 border-t border-gray-200">
-                <button type="button" onclick="cancelEdit()"
-                    class="px-6 py-3 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 font-medium transition-colors duration-200">
-                    <i class="fas fa-times mr-2"></i>Annuler
-                </button>
-                <button type="submit"
-                    class="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium transition-colors duration-200">
-                    <i class="fas fa-save mr-2"></i>Mettre à jour
-                </button>
-            </div>
-        </form>
+            </form>
+        </div>
         <?php
 
     } catch (Exception $e) {

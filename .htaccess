@@ -1,5 +1,5 @@
 RewriteEngine On
-RewriteBase /mps_udated_version/
+RewriteBase /mps_updated_version/
 
 # Exclude existing files/directories from rewriting
 RewriteCond %{REQUEST_FILENAME} !-f

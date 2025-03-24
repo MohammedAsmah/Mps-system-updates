@@ -79,8 +79,11 @@ if (isset($_POST['action'])) {
     <?php endif; ?>
 
     <div class="flex justify-between items-center mb-8">
-        <h2 class="text-3xl font-bold text-gray-800">
-            <i class="fas fa-boxes mr-2"></i>Liste des Accessoires
+        <h2 class="text-3xl font-bold text-gray-800 flex items-center">
+            <span class="bg-blue-600 text-white p-2 rounded-lg mr-3">
+                <i class="fas fa-boxes"></i>
+            </span>
+            Liste des Accessoires
         </h2>
         <div class="flex items-center space-x-6">
             <!-- Category filter form -->

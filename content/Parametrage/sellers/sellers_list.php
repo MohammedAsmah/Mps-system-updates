@@ -3,7 +3,7 @@ if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 
-require_once $_SERVER['DOCUMENT_ROOT'] . '/mps_udated_version/db_connect.php';
+require_once $_SERVER['DOCUMENT_ROOT'] . '/mps_updated_version/db_connect.php';
 
 // Add connection check
 if (!isset($conn)) {
@@ -115,13 +115,13 @@ if (isset($_POST['action'])) {
                             </span>
                         </td>
                         <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                            <div class="flex items-center space-x-4">
+                            <div class="flex items-center space-x-3">
                                 <button onclick="loadEditSellerForm(<?= $seller['Seller_id'] ?>)" 
-                                        class="text-blue-600 hover:text-blue-900 transition-colors duration-200 bg-blue-100 p-2 rounded-full hover:bg-blue-200">
+                                        class="text-blue-600 hover:text-blue-900 transition-colors duration-200">
                                     <i class="fas fa-edit"></i>
                                 </button>
                                 <button onclick="deleteSeller(<?= $seller['Seller_id'] ?>)" 
-                                        class="text-red-600 hover:text-red-900 transition-colors duration-200 bg-red-100 p-2 rounded-full hover:bg-red-200">
+                                        class="text-red-600 hover:text-red-900 transition-colors duration-200">
                                     <i class="fas fa-trash"></i>
                                 </button>
                             </div>
@@ -185,14 +185,32 @@ document.addEventListener('DOMContentLoaded', function() {
     const editSellerFormContainer = document.getElementById('editSellerFormContainer');
     const sellerTableContainer = document.getElementById('sellerTableContainer');
 
-    // Form toggle handler
+    // Add resetContainers function
+    function resetContainers() {
+        addSellerFormContainer.style.display = 'none';
+        editSellerFormContainer.style.display = 'none';
+        sellerTableContainer.style.display = 'block';
+        
+        // Reset button text and colors
+        const toggleButton = document.getElementById('toggleAddSellerForm');
+        toggleButton.innerHTML = '<i class="fas fa-plus mr-2"></i>Nouveau Vendeur';
+        toggleButton.classList.remove('bg-gray-600', 'hover:bg-gray-700');
+        toggleButton.classList.add('bg-blue-600', 'hover:bg-blue-700');
+    }
+
+    // Update Form toggle handler
     if (toggleAddSellerFormButton) {
         toggleAddSellerFormButton.addEventListener('click', function() {
-            addSellerFormContainer.style.display = 
-                addSellerFormContainer.style.display === 'none' ? 'block' : 'none';
-            sellerTableContainer.style.display = 
-                addSellerFormContainer.style.display === 'none' ? 'block' : 'none';
-            editSellerFormContainer.style.display = 'none';
+            if (addSellerFormContainer.style.display === 'none') {
+                addSellerFormContainer.style.display = 'block';
+                sellerTableContainer.style.display = 'none';
+                editSellerFormContainer.style.display = 'none';
+                this.innerHTML = '<i class="fas fa-times mr-2"></i>Annuler';
+                this.classList.remove('bg-blue-600', 'hover:bg-blue-700');
+                this.classList.add('bg-gray-600', 'hover:bg-gray-700');
+            } else {
+                resetContainers();
+            }
         });
     }
 
@@ -281,13 +299,11 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Cancel handlers
     window.cancelAdd = function() {
-        addSellerFormContainer.style.display = 'none';
-        sellerTableContainer.style.display = 'block';
+        resetContainers();
     };
 
     window.cancelEdit = function() {
-        editSellerFormContainer.style.display = 'none';
-        sellerTableContainer.style.display = 'block';
+        resetContainers();
     };
 });
 </script>

@@ -270,7 +270,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     window.loadEditForm = function(userId) {
-        const baseUrl = window.location.origin + '/mps_udated_version/';
+        const baseUrl = window.location.origin + '/mps_updated_version/';
         const absoluteUrl = `${baseUrl}home.php?section=users&item=update_user&id=${userId}&partial=1`;
         
         console.log('Request URL:', absoluteUrl);
