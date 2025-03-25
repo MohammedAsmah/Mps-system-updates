@@ -135,8 +135,8 @@ if (isset($_POST['action'])) {
                                    class="text-blue-600 hover:text-blue-900 transition-colors duration-200">
                                     <i class="fas fa-edit"></i>
                                 </a>
-                                <button onclick="loadAccessories(<?= $article['Article_id'] ?>)"
-                                        class="text-purple-600 hover:text-purple-900 transition-colors duration-200"
+                                <button data-article-id="<?= $article['Article_id'] ?>"
+                                        class="accessories-btn text-purple-600 hover:text-purple-900 transition-colors duration-200"
                                         title="Voir les accessoires">
                                     <i class="fas fa-puzzle-piece"></i>
                                 </button>
@@ -384,32 +384,127 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     // Add accessories handling
-    window.loadAccessories = function(articleId) {
-        const url = `home.php?section=Parametrage&item=article_accessories&id=${articleId}&partial=1`;
-        const accessoriesContainer = document.getElementById('accessoriesContainer');
-        
-        fetch(url, {
-            headers: { 'X-Requested-With': 'XMLHttpRequest' }
-        })
-        .then(response => response.text())
-        .then(html => {
-            accessoriesContainer.innerHTML = html;
-            accessoriesContainer.style.display = 'block';
-            articleTableContainer.style.display = 'none';
-            addArticleFormContainer.style.display = 'none';
-            editArticleFormContainer.style.display = 'none';
-        })
-        .catch(error => {
-            console.error('Error:', error);
-            showMessage('Error loading accessories: ' + error.message, true);
+    document.querySelectorAll('.accessories-btn').forEach(button => {
+        button.addEventListener('click', function() {
+            const articleId = this.dataset.articleId;
+            showAccessoriesModal(articleId);
         });
-    };
+    });
 
-    window.closeAccessories = function() {
-        document.getElementById('accessoriesContainer').style.display = 'none';
-        articleTableContainer.style.display = 'block';
+    window.showAccessoriesModal = function(articleId) {
+        const contentArea = document.getElementById('articleTableContainer');
+        
+        // Load accessories content
+        fetch(`content/Parametrage/products/article_accessories.php?partial=1&id=${articleId}`)
+            .then(response => response.text())
+            .then(html => {
+                contentArea.style.display = 'block';
+                contentArea.innerHTML = html;
+                
+                // Hide other containers
+                document.getElementById('addArticleFormContainer').style.display = 'none';
+                document.getElementById('editArticleFormContainer').style.display = 'none';
+                
+                // Update button state
+                const toggleButton = document.getElementById('toggleAddArticleForm');
+                toggleButton.innerHTML = '<i class="fas fa-times mr-2"></i>Retour';
+                toggleButton.onclick = function() {
+                    location.reload();
+                };
+                
+                setupAccessoriesFormHandlers(articleId);
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('Erreur lors du chargement des accessoires');
+            });
     };
+    function setupAccessoriesFormHandlers(articleId) {
+        const form = document.getElementById('addAccessoryForm');
+        if (form) {
+            form.addEventListener('submit', function(e) {
+                e.preventDefault();
+                const formData = new FormData(this);
 
-    // ...rest of existing code...
+                fetch('content/Parametrage/products/article_accessories.php', {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        // Refresh the modal content
+                        showAccessoriesModal(articleId);
+                    } else {
+                        alert(data.error || 'Une erreur est survenue');
+                    }
+                })
+                .catch(error => alert('Une erreur est survenue'));
+            });
+        }
+    }
+window.deleteAccessory = function(articleId, accessoryId) {
+    if (confirm('Êtes-vous sûr de vouloir supprimer cet accessoire ?')) {
+        fetch('content/Parametrage/products/article_accessories.php', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: `action=delete&article_id=${articleId}&accessory_id=${accessoryId}`
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                showTemporaryMessage(data.message, false);
+                showAccessoriesModal(articleId);
+            } else {
+                showTemporaryMessage(data.error || 'Erreur inconnue', true);
+            }
+        })
+        .catch(() => {
+            showTemporaryMessage('Erreur de connexion', true);
+        });
+    }
+};
+
+// Add this new helper function
+function showTemporaryMessage(message, isError) {
+    const messageDiv = document.createElement('div');
+    messageDiv.className = isError 
+        ? 'bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4 message-fade'
+        : 'bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded mb-4 message-fade';
+    messageDiv.textContent = message;
+    
+    const container = document.querySelector('.container');
+    container.insertBefore(messageDiv, container.firstChild);
+    
+
+        setTimeout(() => messageDiv.remove(), 1500);
+    // Hide after 1.5 seconds
+}
+document.addEventListener('click', function(e) {
+    const deleteBtn = e.target.closest('.delete-accessory-btn');
+    if (deleteBtn) {
+        e.preventDefault();
+        const articleId = deleteBtn.dataset.articleId;
+        const accessoryId = deleteBtn.dataset.accessoryId;  // Fixed: changed btn to deleteBtn
+        
+        // Verify IDs are valid numbers
+        if (isNaN(articleId) || isNaN(accessoryId)) {
+            showMessage('IDs invalides', true);
+            return;
+        }
+        
+        deleteAccessory(parseInt(articleId), parseInt(accessoryId));  // Fixed: added missing comma
+    }
 });
+
+});
+
 </script>
+
+<style>
+#accessoriesDialog {
+    z-index: 1000;
+}
+</style>

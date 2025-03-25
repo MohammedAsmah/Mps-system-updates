@@ -71,7 +71,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' &&
         // Handle accessories if present
         if (isset($_POST['accessories']) && is_array($_POST['accessories'])) {
             $accessoryStmt = $conn->prepare("
-                INSERT INTO ArticleAccessoiries (article_id, Accessoire_id, quantity)
+                INSERT INTO articleaccessoiries (article_id, Accessoire_id, quantity)
                 VALUES (?, ?, ?)
             ");
 

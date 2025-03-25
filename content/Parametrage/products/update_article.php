@@ -100,23 +100,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' &&
         // Handle accessories
         $conn->exec("DELETE FROM ArticleAccessoiries WHERE article_id = $articleId");
 
-if (isset($_POST['accessories']) && is_array($_POST['accessories'])) {
-    $accessoryStmt = $conn->prepare("
-        INSERT INTO ArticleAccessoiries 
-        (article_id, Accessoire_id, quantity) 
-        VALUES (?, ?, ?)
-    ");
+        // Parse accessories from JSON string
+        $accessories = json_decode($_POST['accessories'] ?? '[]', true);
+        if (json_last_error() === JSON_ERROR_NONE && is_array($accessories)) {
+            $accessoryStmt = $conn->prepare("
+                INSERT INTO ArticleAccessoiries 
+                (article_id, Accessoire_id, quantity) 
+                VALUES (?, ?, ?)
+            ");
 
-    foreach ($_POST['accessories'] as $accessory) {
-        // Ensure numeric values
-        $accessoryId = (int)($accessory['id'] ?? 0);
-        $quantity = (int)($accessory['quantity'] ?? 1);
-        
-        if ($accessoryId > 0 && $quantity > 0) {
-            $accessoryStmt->execute([$articleId, $accessoryId, $quantity]);
+            foreach ($accessories as $accessory) {
+                if (isset($accessory['id']) && isset($accessory['quantity'])) {
+                    $accessoryId = (int)$accessory['id'];
+                    $quantity = (int)$accessory['quantity'];
+                    
+                    if ($accessoryId > 0 && $quantity > 0) {
+                        $accessoryStmt->execute([$articleId, $accessoryId, $quantity]);
+                    }
+                }
+            }
         }
-    }
-}
 
         // Commit transaction
         $conn->commit();
@@ -303,23 +306,21 @@ if (isset($_GET['partial']) && $_GET['partial'] == '1') {
                     <div class="flex space-x-2 mb-2">
                         <select id="accessorySelect" class="flex-1 px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-400">
                             <option value="">Sélectionner un accessoire</option>
-                            <?php foreach ($accessories as $accessory): ?>
-    <option value="<?= $accessory['Accessoire_id'] ?>" 
-        data-name="<?= htmlspecialchars($accessory['designation']) ?>">
-        <?= htmlspecialchars($accessory['designation']) ?>
-    </option>
-<?php endforeach; ?>
+                            <?php foreach ($accessories as $acc): ?>
+                                <option value="<?= $acc['Accessoire_id'] ?>" 
+                                    data-name="<?= htmlspecialchars($acc['designation']) ?>">
+                                    <?= htmlspecialchars($acc['designation']) ?>
+                                </option>
+                            <?php endforeach; ?>
                         </select>
-                        <input type="number" id="accessoryQuantity" min="1" value="1" 
-                            class="w-24 px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-400"
-                            placeholder="Qté">
+                        <input type="number" id="accessoryQuantity" min="1" value="1" class="w-24 px-3 py-2 border rounded">
                         <button type="button" onclick="addAccessory()" 
-                            class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700">
-                            Ajouter
-                        </button>
+    class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700">
+    Ajouter
+</button>
                     </div>
                     <div id="selectedAccessories" class="space-y-2">
-                        <!-- Selected accessories will be displayed here -->
+                        <!-- Accessories will be displayed here -->
                     </div>
                 </div>
 
@@ -337,52 +338,60 @@ if (isset($_GET['partial']) && $_GET['partial'] == '1') {
         </div>
 
         <script>
-        let selectedAccessories = [
-            <?php foreach ($existingAccessories as $acc): ?>
-            {
-                id: '<?= $acc['Accessoire_id'] ?>',
-                name: <?= json_encode($acc['designation']) ?>,
-                quantity: <?= $acc['quantity'] ?>
-            },
-            <?php endforeach; ?>
-        ];
+// Initialize selected accessories with proper numeric IDs
+window.selectedAccessories = [
+    <?php foreach ($existingAccessories as $acc): ?>
+    {
+        id: <?= (int)$acc['Accessoire_id'] ?>, // Ensure numeric type
+        name: <?= json_encode($acc['designation']) ?>,
+        quantity: <?= (int)$acc['quantity'] ?>
+    },
+    <?php endforeach; ?>
+];
 
-        function addAccessory() {
+// Global functions for accessory management
+window.addAccessory = function() {
     const select = document.getElementById('accessorySelect');
-    const quantity = document.getElementById('accessoryQuantity');
-    const accessoryId = select.value;
+    const quantityInput = document.getElementById('accessoryQuantity');
     
-    if (accessoryId === "") {
+    // Convert to numbers
+    const accessoryId = parseInt(select.value, 10);
+    const quantity = parseInt(quantityInput.value, 10) || 1;
+
+    // Validation
+    if (accessoryId || accessoryId <= 0) {
         alert('Veuillez sélectionner un accessoire');
         return;
     }
 
-    const accessoryName = select.options[select.selectedIndex].dataset.name;
-
-    // Check if accessory already exists - important change here
-    if (window.selectedAccessories.some(acc => acc.id === accessoryId)) {
+    // Check for duplicates
+    if (window.selectedAccessories.some(a => a.id === accessoryId)) {
         alert('Cet accessoire est déjà ajouté');
         return;
     }
 
-    const accessory = {
+    // Get accessory name
+    const accessoryName = select.options[select.selectedIndex].dataset.name;
+
+    // Add to selection
+    window.selectedAccessories.push({
         id: accessoryId,
         name: accessoryName,
-        quantity: parseInt(quantity.value, 10) || 1
-    };
+        quantity: quantity
+    });
 
-    window.selectedAccessories.push(accessory);
-    displayAccessories();
+    // Update display and reset inputs
+    window.displayAccessories();
     select.value = '';
-    quantity.value = '1';
-}
+    quantityInput.value = '1';
+};
 
-function removeAccessory(index) {
+window.removeAccessory = function(index) {
     window.selectedAccessories.splice(index, 1);
-    displayAccessories();
-}
+    window.displayAccessories();
+};
 
-function displayAccessories() {
+window.displayAccessories = function() {
     const container = document.getElementById('selectedAccessories');
     container.innerHTML = window.selectedAccessories.map((acc, index) => `
         <div class="flex items-center justify-between p-2 bg-gray-50 rounded border border-gray-200">
@@ -394,35 +403,40 @@ function displayAccessories() {
                     ×
                 </button>
             </div>
+            <input type="hidden" name="accessories[${index}][id]" value="${acc.id}">
+            <input type="hidden" name="accessories[${index}][quantity]" value="${acc.quantity}">
         </div>
     `).join('');
-}
+};
 
-        // Initialize accessories display
-        displayAccessories();
+// Initialize display when page loads
+document.addEventListener('DOMContentLoaded', function() {
+    window.displayAccessories();
 
-        document.addEventListener('DOMContentLoaded', function() {
-    const updateArticleForm = document.querySelector('#updateArticleForm');
-    
-    // Display existing accessories on page load
-    displayAccessories();
-    
-    updateArticleForm?.addEventListener('submit', function(e) {
+    // Form submission handler
+    document.getElementById('updateArticleForm').addEventListener('submit', function(e) {
         e.preventDefault();
+        
+        // Clear previous accessory inputs
+        const existingInputs = document.querySelectorAll('[name^="accessories"]');
+        existingInputs.forEach(input => input.remove());
+
+        // Add current accessories to form
+        window.selectedAccessories.forEach((acc, index) => {
+            const container = document.createElement('div');
+            container.innerHTML = `
+                <input type="hidden" name="accessories[${index}][id]" value="${acc.id}">
+                <input type="hidden" name="accessories[${index}][quantity]" value="${acc.quantity}">
+            `;
+            this.appendChild(container);
+        });
+
+        // Submit form
         const formData = new FormData(this);
         
-        // Remove any existing accessories fields that might have been added by displayAccessories
-        const existingInputs = document.querySelectorAll('input[name^="accessories"]');
-        existingInputs.forEach(input => input.remove());
-        
-        // Add the accessories as JSON
-        formData.append('accessories', JSON.stringify(window.selectedAccessories));
-
         fetch('home.php?section=Parametrage&item=update_article', {
             method: 'POST',
-            headers: {
-                'X-Requested-With': 'XMLHttpRequest'
-            },
+            headers: { 'X-Requested-With': 'XMLHttpRequest' },
             body: formData
         })
         .then(response => response.json())
@@ -440,7 +454,7 @@ function displayAccessories() {
         });
     });
 });
-        </script>
+</script>
         <?php
 
     } catch (Exception $e) {
