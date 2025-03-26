@@ -162,7 +162,7 @@ if (isset($_GET['partial']) && $_GET['partial'] == '1') {
             </div>
 
             <div class="flex justify-end space-x-4 mt-6">
-                <button type="button" onclick="closeEditAccessoryForm()"
+                <button type="button" onclick="cancelEdit()"
                     class="px-4 py-2 text-gray-600 hover:text-gray-800 font-medium">
                     Annuler
                 </button>

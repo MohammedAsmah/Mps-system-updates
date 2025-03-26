@@ -1,21 +1,21 @@
 <?php
 include 'db_connect.php';
 
-// Add this near the top, before the articles query
 try {
-    // Fetch all categories for the filter dropdown
+    // Fetch categories for filter dropdown
     $catStmt = $conn->prepare("SELECT * FROM Categories ORDER BY designation");
     $catStmt->execute();
     $categories = $catStmt->fetchAll();
     
-    // Get selected category from GET parameter
+    // Get selected category
     $selectedCategory = isset($_GET['category']) ? $_GET['category'] : '';
     
-    // Modify the articles query to include category filter
+    // Prepare articles query with category filter
     $sql = "SELECT a.*, c.designation as category_name 
             FROM Articles a 
             LEFT JOIN Categories c ON a.categorie_id = c.Categorie_id
             WHERE 1=1 ";
+    
     if ($selectedCategory) {
         $sql .= " AND a.categorie_id = :category_id";
     }
@@ -51,14 +51,14 @@ if (isset($_POST['action'])) {
 
 <div class="container mx-auto px-6 py-8 bg-gray-50">
     <?php if (isset($_SESSION['error_message'])): ?>
-        <div id="errorMessage" class="message-fade bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4" style="opacity: 1">
+        <div id="errorMessage" class="message-fade bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
             <?= htmlspecialchars($_SESSION['error_message']) ?>
         </div>
         <?php unset($_SESSION['error_message']); ?>
     <?php endif; ?>
 
     <?php if (isset($_SESSION['success_message'])): ?>
-        <div id="successMessage" class="message-fade bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded mb-4" style="opacity: 1">
+        <div id="successMessage" class="message-fade bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded mb-4">
             <?= htmlspecialchars($_SESSION['success_message']) ?>
         </div>
         <?php unset($_SESSION['success_message']); ?>
@@ -72,7 +72,6 @@ if (isset($_POST['action'])) {
             Liste des Articles
         </h2>
         <div class="flex items-center space-x-6">
-            <!-- Category filter form -->
             <form id="categoryFilter" class="flex items-center bg-white rounded-lg shadow-sm p-2">
                 <select name="category" id="categorySelect" 
                     class="form-select rounded-lg border-gray-300 focus:border-blue-500 focus:ring focus:ring-blue-200 transition-shadow duration-200">
@@ -91,7 +90,6 @@ if (isset($_POST['action'])) {
                     </button>
                 <?php endif; ?>
             </form>
-            <!-- Existing Add Article button -->
             <button id="toggleAddArticleForm" 
                     class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg shadow-lg transition duration-300 ease-in-out transform hover:-translate-y-1 hover:shadow-xl flex items-center">
                 <i class="fas fa-plus mr-2"></i> Nouvel Article
@@ -131,7 +129,7 @@ if (isset($_POST['action'])) {
                         <td class="px-6 py-4 whitespace-nowrap"><?= number_format($article['poids_avec_emballage'], 2) ?> kg</td>
                         <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
                             <div class="flex items-center space-x-3">
-                                <a href="#" onclick="loadEditArticleForm(<?= $article['Article_id'] ?>)" 
+                            <a href="#" onclick="showUpdateArticleModal(<?= $article['Article_id'] ?>)" 
                                    class="text-blue-600 hover:text-blue-900 transition-colors duration-200">
                                     <i class="fas fa-edit"></i>
                                 </a>
@@ -168,7 +166,7 @@ if (isset($_POST['action'])) {
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    // Message handling from liste_groups.php
+    // Message handling
     const hideMessages = () => {
         const messages = document.querySelectorAll('#successMessage, #errorMessage');
         messages.forEach(msg => {
@@ -184,6 +182,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     hideMessages();
 
+    // Global message display function
     window.showMessage = function(message, isError = false) {
         document.querySelectorAll('#successMessage, #errorMessage').forEach(msg => msg.remove());
         
@@ -205,51 +204,45 @@ document.addEventListener('DOMContentLoaded', function() {
         }, 10000);
     };
 
-    // Toggle Add Article Form
-    const toggleAddArticleFormButton = document.getElementById('toggleAddArticleForm');
-    const addArticleFormContainer = document.getElementById('addArticleFormContainer');
-    const editArticleFormContainer = document.getElementById('editArticleFormContainer');
-    const articleTableContainer = document.getElementById('articleTableContainer');
-
-    if (toggleAddArticleFormButton) {
-        toggleAddArticleFormButton.addEventListener('click', function() {
-            if (addArticleFormContainer.style.display === 'none') {
-                articleTableContainer.style.display = 'none';
-                editArticleFormContainer.style.display = 'none';
-                addArticleFormContainer.style.display = 'block';
-                this.innerHTML = '<i class="fas fa-times mr-2"></i>Annuler';
-                this.classList.remove('bg-blue-600', 'hover:bg-blue-700');
-                this.classList.add('bg-gray-600', 'hover:bg-gray-700');
-            } else {
-                resetContainers();
-                this.classList.remove('bg-gray-600', 'hover:bg-gray-700');
-                this.classList.add('bg-blue-600', 'hover:bg-blue-700');
-            }
-        });
-    }
-
-    // Add resetContainers function:
+    // Container management functions
     function resetContainers() {
-        addArticleFormContainer.style.display = 'none';
-        editArticleFormContainer.style.display = 'none';
-        articleTableContainer.style.display = 'block';
+        document.getElementById('addArticleFormContainer').style.display = 'none';
+        document.getElementById('editArticleFormContainer').style.display = 'none';
+        document.getElementById('articleTableContainer').style.display = 'block';
         
-        // Reset button text and colors
         const toggleButton = document.getElementById('toggleAddArticleForm');
         toggleButton.innerHTML = '<i class="fas fa-plus mr-2"></i>Nouvel Article';
         toggleButton.classList.remove('bg-gray-600', 'hover:bg-gray-700');
         toggleButton.classList.add('bg-blue-600', 'hover:bg-blue-700');
     }
 
-    // Update cancel functions:
-    window.cancelAdd = function() {
+    // Toggle Add Article Form
+    const toggleAddArticleFormButton = document.getElementById('toggleAddArticleForm');
+    toggleAddArticleFormButton.addEventListener('click', function() {
+        const addArticleFormContainer = document.getElementById('addArticleFormContainer');
+        const articleTableContainer = document.getElementById('articleTableContainer');
+        const editArticleFormContainer = document.getElementById('editArticleFormContainer');
+
+        if (addArticleFormContainer.style.display === 'none') {
+            articleTableContainer.style.display = 'none';
+            editArticleFormContainer.style.display = 'none';
+            addArticleFormContainer.style.display = 'block';
+            this.innerHTML = '<i class="fas fa-times mr-2"></i>Annuler';
+            this.classList.remove('bg-blue-600', 'hover:bg-blue-700');
+            this.classList.add('bg-gray-600', 'hover:bg-gray-700');
+        } else {
+            resetContainers();
+        }
+    });
+
+      // Cancel functions
+      window.cancelAdd = function() {
         resetContainers();
     };
 
     window.cancelEdit = function() {
         resetContainers();
-    }
-
+    };
     // Delete Article Function
     window.deleteArticle = function(articleId) {
         if (confirm('Êtes-vous sûr de vouloir supprimer cet article ?')) {
@@ -284,39 +277,41 @@ document.addEventListener('DOMContentLoaded', function() {
             return response.text();
         })
         .then(html => {
+            const editArticleFormContainer = document.getElementById('editArticleFormContainer');
+            const articleTableContainer = document.getElementById('articleTableContainer');
+            const addArticleFormContainer = document.getElementById('addArticleFormContainer');
+
             editArticleFormContainer.innerHTML = html;
             editArticleFormContainer.style.display = 'block';
             articleTableContainer.style.display = 'none';
             addArticleFormContainer.style.display = 'none';
 
-            // Add form submission handler
             const editForm = editArticleFormContainer.querySelector('form');
             if (editForm) {
                 editForm.addEventListener('submit', function(e) {
                     e.preventDefault();
                     const formData = new FormData(this);
 
-                    fetch(`home.php?section=Parametrage&item=update_article`, {
-                        method: 'POST',
-                        headers: { 
-                            'X-Requested-With': 'XMLHttpRequest'
-                        },
-                        body: formData
-                    })
+                    fetch(`home.php?section=Parametrage&item=update_article&partial=1`, {
+    method: 'POST',
+    headers: { 
+        'X-Requested-With': 'XMLHttpRequest',
+        'Content-Type': 'application/x-www-form-urlencoded' 
+    },
+    body: new URLSearchParams(formData)
+})
                     .then(response => response.text())
                     .then(text => {
                         try {
-                            return JSON.parse(text);
+                            const data = JSON.parse(text);
+                            if (data.success) {
+                                showMessage(data.message || 'Article mis à jour avec succès');
+                                setTimeout(() => location.reload(), 2000);
+                            } else {
+                                showMessage(data.error || 'Une erreur est survenue', true);
+                            }
                         } catch (e) {
                             throw new Error('Invalid JSON response: ' + text);
-                        }
-                    })
-                    .then(data => {
-                        if (data.success) {
-                            showMessage(data.message || 'Article mis à jour avec succès');
-                            setTimeout(() => location.reload(), 2000);
-                        } else {
-                            showMessage(data.error || 'Une erreur est survenue', true);
                         }
                     })
                     .catch(error => {
@@ -332,16 +327,7 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     };
 
-    // Cancel functions
-    window.cancelAdd = function() {
-        resetContainers();
-    };
-
-    window.cancelEdit = function() {
-        resetContainers();
-    };
-
-    // Add new category filter handling
+    // Category Filter Handling
     const categorySelect = document.getElementById('categorySelect');
     const resetFilter = document.getElementById('resetFilter');
     
@@ -350,9 +336,7 @@ document.addEventListener('DOMContentLoaded', function() {
         url.searchParams.set('category', categoryId);
         
         fetch(url, {
-            headers: {
-                'X-Requested-With': 'XMLHttpRequest'
-            }
+            headers: { 'X-Requested-With': 'XMLHttpRequest' }
         })
         .then(response => response.text())
         .then(html => {
@@ -364,7 +348,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 document.getElementById('articleTableContainer').innerHTML = newTable.innerHTML;
             }
             
-            // Update URL without page refresh
             window.history.pushState({}, '', url);
         })
         .catch(error => console.error('Error:', error));
@@ -383,7 +366,7 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
-    // Add accessories handling
+    // Accessories Handling
     document.querySelectorAll('.accessories-btn').forEach(button => {
         button.addEventListener('click', function() {
             const articleId = this.dataset.articleId;
@@ -391,21 +374,23 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     });
 
+    // Accessories modal functions defined in a separate script
     window.showAccessoriesModal = function(articleId) {
         const contentArea = document.getElementById('articleTableContainer');
         
-        // Load accessories content
         fetch(`content/Parametrage/products/article_accessories.php?partial=1&id=${articleId}`)
             .then(response => response.text())
             .then(html => {
-                contentArea.style.display = 'block';
-                contentArea.innerHTML = html;
+                const modalContainer = document.createElement('div');
+                modalContainer.id = 'accessoriesModalContainer';
+                modalContainer.innerHTML = html;
                 
-                // Hide other containers
+                contentArea.innerHTML = '';
+                contentArea.appendChild(modalContainer);
+                
                 document.getElementById('addArticleFormContainer').style.display = 'none';
                 document.getElementById('editArticleFormContainer').style.display = 'none';
                 
-                // Update button state
                 const toggleButton = document.getElementById('toggleAddArticleForm');
                 toggleButton.innerHTML = '<i class="fas fa-times mr-2"></i>Retour';
                 toggleButton.onclick = function() {
@@ -413,12 +398,110 @@ document.addEventListener('DOMContentLoaded', function() {
                 };
                 
                 setupAccessoriesFormHandlers(articleId);
+                setupAccessoriesCloseHandler();
             })
             .catch(error => {
                 console.error('Error:', error);
                 alert('Erreur lors du chargement des accessoires');
             });
     };
+    // 
+window.showUpdateArticleModal = function(articleId) {
+    const contentArea = document.getElementById('articleTableContainer');
+    
+    fetch(`home.php?section=Parametrage&item=update_article&partial=1&id=${articleId}`)
+        .then(response => response.text())
+        .then(html => {
+            const modalContainer = document.createElement('div');
+            modalContainer.id = 'updateArticleModalContainer';
+            modalContainer.innerHTML = html;
+            
+            contentArea.innerHTML = '';
+            contentArea.appendChild(modalContainer);
+            
+            document.getElementById('addArticleFormContainer').style.display = 'none';
+            document.getElementById('editArticleFormContainer').style.display = 'none';
+            
+            const toggleButton = document.getElementById('toggleAddArticleForm');
+            toggleButton.innerHTML = '<i class="fas fa-times mr-2"></i>Retour';
+            toggleButton.onclick = function() {
+                location.reload();
+            };
+            
+            setupUpdateFormHandlers(articleId);
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('Erreur lors du chargement du formulaire');
+        });
+};
+
+function setupUpdateFormHandlers(articleId) {
+    const form = document.getElementById('updateArticleForm');
+    
+    form.addEventListener('submit', function(e) {
+        e.preventDefault();
+        
+        // Safely prepare accessories data
+        const accessories = Array.isArray(window.selectedAccessories)
+            ? window.selectedAccessories.map(acc => ({
+                id: parseInt(acc.id),
+                quantity: parseInt(acc.quantity)
+            }))
+            : [];
+
+        // Create form data
+        const formData = new FormData(this);
+        formData.append('accessories', JSON.stringify(accessories));
+
+        // Submit form
+        fetch('home.php?section=Parametrage&item=update_article', {
+            method: 'POST',
+            headers: { 
+                'X-Requested-With': 'XMLHttpRequest',
+                'Accept': 'application/json'
+            },
+            body: formData
+        })
+        .then(async response => {
+            const text = await response.text();
+            try {
+                return JSON.parse(text);
+            } catch (e) {
+                console.error('Failed to parse JSON:', text);
+                throw new Error('Invalid server response');
+            }
+        })
+        .then(data => {
+            if (data.success) {
+                window.showMessage(data.message || 'Mise à jour réussie');
+                setTimeout(() => location.reload(), 1500);
+            } else {
+                window.showMessage(data.error || 'Erreur inconnue', true);
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            window.showMessage('Erreur technique: ' + error.message, true);
+        });
+    });
+}
+    function setupAccessoriesCloseHandler() {
+        const closeButton = document.getElementById('closeAccessoriesModal');
+        if (closeButton) {
+            closeButton.addEventListener('click', function() {
+                location.reload();
+            });
+        }
+
+        const closeIcon = document.querySelector('#closeAccessoriesModal .fa-times');
+        if (closeIcon) {
+            closeIcon.addEventListener('click', function() {
+                location.reload();
+            });
+        }
+    }
+
     function setupAccessoriesFormHandlers(articleId) {
         const form = document.getElementById('addAccessoryForm');
         if (form) {
@@ -433,7 +516,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 .then(response => response.json())
                 .then(data => {
                     if (data.success) {
-                        // Refresh the modal content
                         showAccessoriesModal(articleId);
                     } else {
                         alert(data.error || 'Une erreur est survenue');
@@ -443,68 +525,45 @@ document.addEventListener('DOMContentLoaded', function() {
             });
         }
     }
-window.deleteAccessory = function(articleId, accessoryId) {
-    if (confirm('Êtes-vous sûr de vouloir supprimer cet accessoire ?')) {
-        fetch('content/Parametrage/products/article_accessories.php', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/x-www-form-urlencoded',
-            },
-            body: `action=delete&article_id=${articleId}&accessory_id=${accessoryId}`
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                showTemporaryMessage(data.message, false);
-                showAccessoriesModal(articleId);
-            } else {
-                showTemporaryMessage(data.error || 'Erreur inconnue', true);
+
+    // Event listener for delete buttons
+    document.addEventListener('click', function(e) {
+        const deleteBtn = e.target.closest('.delete-accessory-btn');
+        if (deleteBtn) {
+            e.preventDefault();
+            const articleId = deleteBtn.dataset.articleId;
+            const accessoryId = deleteBtn.dataset.accessoryId;
+            
+            if (isNaN(articleId) || isNaN(accessoryId)) {
+                alert('IDs invalides');
+                return;
             }
-        })
-        .catch(() => {
-            showTemporaryMessage('Erreur de connexion', true);
-        });
-    }
-};
-
-// Add this new helper function
-function showTemporaryMessage(message, isError) {
-    const messageDiv = document.createElement('div');
-    messageDiv.className = isError 
-        ? 'bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4 message-fade'
-        : 'bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded mb-4 message-fade';
-    messageDiv.textContent = message;
-    
-    const container = document.querySelector('.container');
-    container.insertBefore(messageDiv, container.firstChild);
-    
-
-        setTimeout(() => messageDiv.remove(), 1500);
-    // Hide after 1.5 seconds
-}
-document.addEventListener('click', function(e) {
-    const deleteBtn = e.target.closest('.delete-accessory-btn');
-    if (deleteBtn) {
-        e.preventDefault();
-        const articleId = deleteBtn.dataset.articleId;
-        const accessoryId = deleteBtn.dataset.accessoryId;  // Fixed: changed btn to deleteBtn
-        
-        // Verify IDs are valid numbers
-        if (isNaN(articleId) || isNaN(accessoryId)) {
-            showMessage('IDs invalides', true);
-            return;
+            
+            deleteAccessory(parseInt(articleId), parseInt(accessoryId));
         }
-        
-        deleteAccessory(parseInt(articleId), parseInt(accessoryId));  // Fixed: added missing comma
-    }
-});
+    });
 
+    window.deleteAccessory = function(articleId, accessoryId) {
+        if (confirm('Êtes-vous sûr de vouloir supprimer cet accessoire ?')) {
+            fetch('content/Parametrage/products/article_accessories.php', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: `action=delete&article_id=${articleId}&accessory_id=${accessoryId}`
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    showAccessoriesModal(articleId);
+                } else {
+                    alert(data.error || 'Erreur inconnue');
+                }
+            })
+            .catch(() => {
+                alert('Erreur de connexion');
+            });
+        }
+    };
 });
-
 </script>
-
-<style>
-#accessoriesDialog {
-    z-index: 1000;
-}
-</style>
