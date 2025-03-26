@@ -11,142 +11,155 @@ ob_start();
 require 'db_connect.php';
 
 // Handle AJAX request (POST)
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && 
-    isset($_SERVER['HTTP_X_REQUESTED_WITH']) && 
-    strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest') {
-    
-    // Clear any output buffers
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    // Ensure we only output JSON
     ob_clean();
-    
-    // Set JSON header
     header('Content-Type: application/json');
     
-    // Initialize response
-    $response = ['success' => false, 'error' => null];
+    $articleId = (int)($_POST['id'] ?? 0);
+    if ($articleId < 1) {
+        echo json_encode(['success' => false, 'error' => "ID d'article invalide"]);
+        exit();
+    }
     
+    $response = ['success' => false, 'error' => null];
+    $changesMade = false;
+
     try {
-        // Validate session
         if (!isset($_SESSION['user_id'])) {
             throw new Exception("Session expirée, veuillez vous reconnecter");
         }
 
-        // Validate article ID
-        $articleId = (int)($_POST['id'] ?? 0);
-        if ($articleId < 1) {
-            throw new Exception("ID d'article invalide");
-        }
-
-        // Validate form data
-        $requiredFields = ['designation', 'bardoce_p', 'categorie_id'];
-        foreach ($requiredFields as $field) {
-            if (empty($_POST[$field])) {
-                throw new Exception("Le champ $field est obligatoire");
-            }
-        }
-
-        // Begin transaction
         $conn->beginTransaction();
 
-        // Check for duplicate designation
-        $checkDesignation = $conn->prepare("
-            SELECT COUNT(*) 
-            FROM Articles 
-            WHERE designation = ? AND Article_id != ?
-        ");
-        $checkDesignation->execute([$_POST['designation'], $articleId]);
-        if ($checkDesignation->fetchColumn() > 0) {
-            throw new Exception("Cette désignation existe déjà");
-        }
-
-        // Check for duplicate barcode
-        $checkBarcode = $conn->prepare("
-            SELECT COUNT(*) 
-            FROM Articles 
-            WHERE bardoce_p = ? AND Article_id != ?
-        ");
-        $checkBarcode->execute([$_POST['bardoce_p'], $articleId]);
-        if ($checkBarcode->fetchColumn() > 0) {
-            throw new Exception("Ce code-barres existe déjà");
-        }
-
-        // Update article details
-        $stmt = $conn->prepare("
-            UPDATE Articles 
-            SET 
-                designation = ?,
-                conditionnement = ?,
-                palette = ?,
-                tarif = ?,
-                bardoce_p = ?,
-                barcode_pi = ?,
-                poids_sans_emballage = ?,
-                poids_avec_emballage = ?,
-                categorie_id = ?
-            WHERE Article_id = ?
-        ");
-        $stmt->execute([
-            trim($_POST['designation']),
-            $_POST['conditionnement'] ?? null,
-            $_POST['palette'] ?? null,
-            $_POST['tarif'] ?? 0.00,
-            trim($_POST['bardoce_p']),
-            $_POST['barcode_pi'] ?? null,
-            $_POST['poids_sans_emballage'] ?? 0.00,
-            $_POST['poids_avec_emballage'] ?? 0.00,
-            $_POST['categorie_id'],
-            $articleId
-        ]);
-
-        // Handle accessories
-        $conn->exec("DELETE FROM ArticleAccessoiries WHERE article_id = $articleId");
-
-        // Parse accessories from JSON string
-        $accessories = json_decode($_POST['accessories'] ?? '[]', true);
-        if (json_last_error() === JSON_ERROR_NONE && is_array($accessories)) {
-            $accessoryStmt = $conn->prepare("
-                INSERT INTO ArticleAccessoiries 
-                (article_id, Accessoire_id, quantity) 
-                VALUES (?, ?, ?)
-            ");
-
-            foreach ($accessories as $accessory) {
-                if (isset($accessory['id']) && isset($accessory['quantity'])) {
-                    $accessoryId = (int)$accessory['id'];
-                    $quantity = (int)$accessory['quantity'];
-                    
-                    if ($accessoryId > 0 && $quantity > 0) {
-                        $accessoryStmt->execute([$articleId, $accessoryId, $quantity]);
-                    }
-                }
+        // 1. Process Article Updates
+        $currentArticle = $conn->query("SELECT * FROM Articles WHERE Article_id = $articleId")->fetch();
+        $updateFields = [];
+        $params = [];
+        
+        $fieldsToCheck = [
+            'designation', 'conditionnement', 'palette', 'tarif',
+            'bardoce_p', 'barcode_pi', 'poids_sans_emballage', 
+            'poids_avec_emballage', 'categorie_id'
+        ];
+        
+        foreach ($fieldsToCheck as $field) {
+            $newValue = $_POST[$field] ?? null;
+            $currentValue = $currentArticle[$field];
+            
+            if (in_array($field, ['tarif', 'poids_sans_emballage', 'poids_avec_emballage'])) {
+                $newValue = (float)$newValue;
+                $currentValue = (float)$currentValue;
+            }
+            
+            if ($newValue != $currentValue) {
+                $updateFields[] = "$field = ?";
+                $params[] = $newValue;
+                $changesMade = true;
             }
         }
+        
+        if (!empty($updateFields)) {
+            $sql = "UPDATE Articles SET " . implode(', ', $updateFields) . " WHERE Article_id = ?";
+            $params[] = $articleId;
+            $stmt = $conn->prepare($sql);
+            $stmt->execute($params);
+        }
 
-        // Commit transaction
+// Process Accessories
+$accessories = json_decode($_POST['accessories'] ?? '[]', true);
+if (json_last_error() !== JSON_ERROR_NONE) {
+    throw new Exception("Format des accessoires invalide");
+}
+
+// Get current accessories
+$currentAccessories = $conn->query("
+    SELECT Accessoire_id, quantity 
+    FROM ArticleAccessoiries 
+    WHERE article_id = $articleId
+")->fetchAll(PDO::FETCH_ASSOC);
+
+// Convert to comparable format [id => quantity]
+$currentMap = [];
+foreach ($currentAccessories as $acc) {
+    $currentMap[(int)$acc['Accessoire_id']] = (int)$acc['quantity'];
+}
+
+// Prepare new accessories in same format
+$newMap = [];
+foreach ($accessories as $acc) {
+    if (isset($acc['id']) && isset($acc['quantity'])) {
+        $id = (int)$acc['id'];
+        $qty = (int)$acc['quantity'];
+        if ($id > 0) {
+            $newMap[$id] = $qty;
+        }
+    }
+}
+
+// Calculate differences
+$toDelete = array_diff_key($currentMap, $newMap);
+$toUpdate = array_intersect_key(array_diff($newMap, $currentMap), $newMap);
+$toInsert = array_diff_key($newMap, $currentMap);
+
+// Process changes
+if (!empty($toDelete) || !empty($toUpdate) || !empty($toInsert)) {
+    $changesMade = true;
+
+    // Delete removed accessories
+    if (!empty($toDelete)) {
+        $deleteStmt = $conn->prepare("
+            DELETE FROM ArticleAccessoiries 
+            WHERE article_id = ? AND Accessoire_id = ?
+        ");
+        foreach ($toDelete as $id => $_) {
+            $deleteStmt->execute([$articleId, $id]);
+        }
+    }
+
+    // Update existing accessories
+    if (!empty($toUpdate)) {
+        $updateStmt = $conn->prepare("
+            UPDATE ArticleAccessoiries 
+            SET quantity = ? 
+            WHERE article_id = ? AND Accessoire_id = ?
+        ");
+        foreach ($toUpdate as $id => $qty) {
+            $updateStmt->execute([$qty, $articleId, $id]);
+        }
+    }
+
+    // Insert new accessories
+    if (!empty($toInsert)) {
+        $insertStmt = $conn->prepare("
+            INSERT INTO ArticleAccessoiries 
+            (article_id, Accessoire_id, quantity) 
+            VALUES (?, ?, ?)
+        ");
+        foreach ($toInsert as $id => $qty) {
+            $insertStmt->execute([$articleId, $id, $qty]);
+        }
+    }
+}
+
         $conn->commit();
-
-        // Success response
+        
         $response['success'] = true;
-        $response['message'] = "Article mis à jour avec succès";
+        $response['message'] = $changesMade 
+            ? "Article mis à jour avec succès" 
+            : "Aucune modification détectée";
 
     } catch (Exception $e) {
-        // Rollback on error
-        if ($conn->inTransaction()) {
-            $conn->rollBack();
-        }
-        
-        // Error response
+        $conn->rollBack();
         $response['error'] = $e->getMessage();
     }
 
-    // Send JSON response
     echo json_encode($response);
     exit();
 }
 
 // Handle GET request (form display)
 if (isset($_GET['partial']) && $_GET['partial'] == '1') {
-    // Clean buffer before HTML output
-    ob_end_clean();
     
     try {
         $articleId = (int)($_GET['id'] ?? 0);
@@ -338,49 +351,52 @@ if (isset($_GET['partial']) && $_GET['partial'] == '1') {
         </div>
 
         <script>
-// Initialize selected accessories with proper numeric IDs
-window.selectedAccessories = [
-    <?php foreach ($existingAccessories as $acc): ?>
-    {
-        id: <?= (int)$acc['Accessoire_id'] ?>, // Ensure numeric type
-        name: <?= json_encode($acc['designation']) ?>,
-        quantity: <?= (int)$acc['quantity'] ?>
-    },
-    <?php endforeach; ?>
-];
+/<script>
+// Initialize selected accessories properly
+document.addEventListener('DOMContentLoaded', function() {
+    // Convert PHP data to JS format
+    window.selectedAccessories = <?= json_encode(array_map(function($acc) {
+        return [
+            'id' => (int)$acc['Accessoire_id'],
+            'name' => $acc['designation'],
+            'quantity' => (int)$acc['quantity']
+        ];
+    }, $existingAccessories)) ?>;
 
-// Global functions for accessory management
+    // Ensure array type
+    if (!Array.isArray(window.selectedAccessories)) {
+        window.selectedAccessories = [];
+    }
+    
+    // Initial display
+    window.displayAccessories();
+});
+
+// Accessory management functions
 window.addAccessory = function() {
     const select = document.getElementById('accessorySelect');
     const quantityInput = document.getElementById('accessoryQuantity');
-    
-    // Convert to numbers
-    const accessoryId = parseInt(select.value, 10);
-    const quantity = parseInt(quantityInput.value, 10) || 1;
-
-    // Validation
-    if (accessoryId || accessoryId <= 0) {
-        alert('Veuillez sélectionner un accessoire');
-        return;
-    }
-
-    // Check for duplicates
-    if (window.selectedAccessories.some(a => a.id === accessoryId)) {
-        alert('Cet accessoire est déjà ajouté');
-        return;
-    }
-
-    // Get accessory name
+    const accessoryId = parseInt(select.value);
     const accessoryName = select.options[select.selectedIndex].dataset.name;
+    const quantity = parseInt(quantityInput.value) || 1;
 
-    // Add to selection
-    window.selectedAccessories.push({
-        id: accessoryId,
-        name: accessoryName,
-        quantity: quantity
-    });
+    if (!accessoryId || isNaN(accessoryId)) {
+        alert('Veuillez sélectionner un accessoire valide');
+        return;
+    }
 
-    // Update display and reset inputs
+    // Check if already exists
+    const existingIndex = window.selectedAccessories.findIndex(a => a.id === accessoryId);
+    if (existingIndex >= 0) {
+        window.selectedAccessories[existingIndex].quantity = quantity;
+    } else {
+        window.selectedAccessories.push({
+            id: accessoryId,
+            name: accessoryName,
+            quantity: quantity
+        });
+    }
+
     window.displayAccessories();
     select.value = '';
     quantityInput.value = '1';
@@ -403,8 +419,6 @@ window.displayAccessories = function() {
                     ×
                 </button>
             </div>
-            <input type="hidden" name="accessories[${index}][id]" value="${acc.id}">
-            <input type="hidden" name="accessories[${index}][quantity]" value="${acc.quantity}">
         </div>
     `).join('');
 };
@@ -421,19 +435,23 @@ document.addEventListener('DOMContentLoaded', function() {
         const existingInputs = document.querySelectorAll('[name^="accessories"]');
         existingInputs.forEach(input => input.remove());
 
-        // Add current accessories to form
-        window.selectedAccessories.forEach((acc, index) => {
-            const container = document.createElement('div');
-            container.innerHTML = `
-                <input type="hidden" name="accessories[${index}][id]" value="${acc.id}">
-                <input type="hidden" name="accessories[${index}][quantity]" value="${acc.quantity}">
-            `;
-            this.appendChild(container);
-        });
+        // Initialize selected accessories with proper numeric IDs
+window.selectedAccessories = <?= json_encode(array_map(function($acc) {
+    return [
+        'id' => (int)$acc['Accessoire_id'],
+        'name' => $acc['designation'],
+        'quantity' => (int)$acc['quantity']
+    ];
+}, $existingAccessories)) ?>;
+
+// Ensure it's always an array
+if (!Array.isArray(window.selectedAccessories)) {
+    window.selectedAccessories = [];
+}
 
         // Submit form
         const formData = new FormData(this);
-        
+        console.log([...formData.entries()]); 
         fetch('home.php?section=Parametrage&item=update_article', {
             method: 'POST',
             headers: { 'X-Requested-With': 'XMLHttpRequest' },
@@ -455,17 +473,18 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 });
 </script>
-        <?php
+<?php
 
-    } catch (Exception $e) {
-        echo "<div class='text-red-500 p-4'>Erreur: " . htmlspecialchars($e->getMessage()) . "</div>";
-    }
-    
-    exit();
+} catch (Exception $e) {
+    echo "<div class='text-red-500 p-4'>Erreur: " . htmlspecialchars($e->getMessage()) . "</div>";
 }
 
-// Invalid request handler
-ob_end_clean();
-header('HTTP/1.1 400 Bad Request');
-echo json_encode(['success' => false, 'error' => 'Requête invalide']);
+exit();
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+echo json_encode(['success' => false, 'error' => 'Données manquantes']);
+} else {
+header('Location: liste_articles.php');
+}
 exit();

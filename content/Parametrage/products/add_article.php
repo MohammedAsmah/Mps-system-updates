@@ -69,22 +69,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' &&
         $articleId = $conn->lastInsertId();
 
         // Handle accessories if present
-        if (isset($_POST['accessories']) && is_array($_POST['accessories'])) {
-            $accessoryStmt = $conn->prepare("
-                INSERT INTO articleaccessoiries (article_id, Accessoire_id, quantity)
-                VALUES (?, ?, ?)
-            ");
-
-            foreach ($_POST['accessories'] as $accessory) {
-                $accessoryStmt->execute([
-                    $articleId,
-                    $accessory['id'],
-                    $accessory['quantity']
-                ]);
-            }
+if (isset($_POST['accessories'])) {
+    try {
+        $accessoriesData = json_decode($_POST['accessories'], true);
+        
+        if (json_last_error() !== JSON_ERROR_NONE || !is_array($accessoriesData)) {
+            throw new Exception("Format d'accessoires invalide");
         }
 
-        $conn->commit();
+        $accessoryStmt = $conn->prepare("
+            INSERT INTO articleaccessoiries (article_id, Accessoire_id, quantity)
+            VALUES (?, ?, ?)
+        ");
+
+        foreach ($accessoriesData as $accessory) {
+            if (!isset($accessory['id']) || !isset($accessory['quantity'])) {
+                throw new Exception("Données d'accessoire incomplètes");
+            }
+            
+            $accessoryStmt->execute([
+                $articleId,
+                intval($accessory['id']),
+                intval($accessory['quantity'])
+            ]);
+        }
+    } catch (Exception $e) {
+        $conn->rollBack();
+        echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+        exit();
+    }
+}
+
+$conn->commit();
         echo json_encode(['success' => true, 'message' => "Article créé avec succès"]);
         exit();
         
@@ -322,7 +338,14 @@ if (!isset($_SERVER['HTTP_X_REQUESTED_WITH']) || strtolower($_SERVER['HTTP_X_REQ
         addArticleForm?.addEventListener('submit', function(e) {
             e.preventDefault();
             const formData = new FormData(this);
-            formData.append('accessories', JSON.stringify(selectedAccessories));
+            const accessoriesInputs = selectedAccessories.map((acc, index) => {
+    return {
+        id: acc.id,
+        quantity: acc.quantity
+    };
+});
+formData.append('accessories', JSON.stringify(accessoriesInputs));
+
 
             fetch('home.php?section=articles&item=add_article', {
                 method: 'POST',

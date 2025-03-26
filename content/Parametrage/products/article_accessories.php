@@ -105,9 +105,9 @@ if (isset($_GET['partial']) && $_GET['partial'] == '1') {
             <h2 class="text-2xl font-bold text-gray-800">
                 Accessoires de l'article: <?= htmlspecialchars($article['designation']) ?>
             </h2>
-            <button type="button" id="closeAccessoriesModal" class="text-gray-500 hover:text-gray-700">
-                <i class="fas fa-times"></i>
-            </button>
+           <button type="button" id="closeAccessoriesModal" class="text-gray-500 hover:text-gray-700">
+    <i class="fas fa-times"></i>
+</button>
         </div>
 
         <!-- Add accessory form -->
