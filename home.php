@@ -9,29 +9,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_GET['item']) && $_GET['item
     include __DIR__ . '/content/groups/add_group.php';
     exit();
 }
-// Handle add_article equests
+// Handle add_article requests
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_GET['item']) && $_GET['item'] === 'add_article') {
-    include __DIR__ .'/content/Parametrage/products/add_article.php';
+    include __DIR__ . '/content/Parametrage/products/add_article.php';
     exit();
 }
-// Handle add_accessory equests
+// Handle add_accessory requests
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_GET['item']) && $_GET['item'] === 'add_accessory') {
-    include __DIR__ .'/content/Parametrage/accessories/add_accessory.php';
+    include __DIR__ . '/content/Parametrage/accessories/add_accessory.php';
     exit();
 }
-
 // Handle add_seller POST requests
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_GET['item']) && $_GET['item'] === 'add_seller') {
     include __DIR__ . '/content/Parametrage/sellers/add_seller.php';
     exit();
 }
-
 // Handle add_bank POST requests
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_GET['item']) && $_GET['item'] === 'add_bank') {
     include __DIR__ . '/content/Parametrage/banks/add_bank.php';
     exit();
 }
-
 // Handle update_accessory requests
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_GET['item']) && $_GET['item'] === 'update_accessory') {
     $file_path = __DIR__ . '/content/Parametrage/accessories/update_accessory.php';
@@ -49,10 +46,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_GET['item']) && $_GET['item
     }
 }
 
+// NEW: Handle AJAX POST requests to update_article.php (form submission)
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && 
+    isset($_SERVER['HTTP_X_REQUESTED_WITH']) && 
+    strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest' && 
+    isset($_POST['article_id']) && 
+    !isset($_GET['item'])) {
+    $file_path = __DIR__ . '/content/Parametrage/products/update_article.php';
+    if (file_exists($file_path)) {
+        include $file_path;
+        exit();
+    } else {
+        header('Content-Type: application/json');
+        echo json_encode(['success' => false, 'error' => 'Update script not found']);
+        exit();
+    }
+}
+
+// Handle AJAX GET requests to update_article.php (form display)
+if ($_SERVER['REQUEST_METHOD'] === 'GET' && 
+    isset($_SERVER['HTTP_X_REQUESTED_WITH']) && 
+    strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest' && 
+    isset($_GET['id']) && 
+    !isset($_GET['item'])) {
+    $file_path = __DIR__ . '/content/Parametrage/products/update_article.php';
+    if (file_exists($file_path)) {
+        include $file_path;
+        exit();
+    }
+}
+
 // Handle update_group requests
 if (isset($_GET['item']) && $_GET['item'] === 'update_group') {
     $file_path = __DIR__ . '/content/groups/update_group.php';
-    
     if (file_exists($file_path)) {
         include $file_path;
     } else {
@@ -60,11 +86,9 @@ if (isset($_GET['item']) && $_GET['item'] === 'update_group') {
         die("Update group file not found");
     }
 }
-
 // Handle update_bank requests
 if (isset($_GET['item']) && $_GET['item'] === 'update_bank') {
     $file_path = __DIR__ . '/content/Parametrage/banks/update_bank.php';
-    
     if (file_exists($file_path)) {
         include $file_path;
     } else {
@@ -81,22 +105,10 @@ if (isset($_GET['item']) && $_GET['item'] === 'article_accessories') {
         http_response_code(404);
         die("article accessories file not found");
     }
-} 
-// Handle update_article requests
-if (isset($_GET['item']) && $_GET['item'] === 'update_article') {
-    $file_path = __DIR__ . '/content/Parametrage/products/update_article.php';
-    
-    if (file_exists($file_path)) {
-        include $file_path;
-    } else {
-        http_response_code(404);
-        die("Update article file not found");
-    }
 }
 // Handle update_user requests immediately
 if (isset($_GET['item']) && $_GET['item'] === 'update_user') {
     $file_path = __DIR__ . '/content/users/update_user.php';
-    
     if (file_exists($file_path)) {
         include $file_path;
         exit();
@@ -105,12 +117,10 @@ if (isset($_GET['item']) && $_GET['item'] === 'update_user') {
         die("Update file not found");
     }
 }
-
 // Handle accessories routes
 if (isset($_GET['item']) && strpos($_GET['item'], 'accessories/') === 0) {
     $itemPath = substr($_GET['item'], strlen('accessories/'));
     $file_path = __DIR__ . '/content/Parametrage/accessories/' . $itemPath . '.php';
-    
     if (file_exists($file_path)) {
         include $file_path;
         exit();
@@ -174,7 +184,6 @@ if ($is_admin) {
             'title' => $menu['menu_name']
         ];
     }
-
 } else {
     // Regular user - get group-based menu access
     $sql = "SELECT DISTINCT m.menu_id, m.menu_name 
@@ -233,10 +242,10 @@ if ($currentSection) {
 $currentItem = isset($_GET['item']) && isset($sidebar[$_GET['item']])
     ? $_GET['item']
     : (count($sidebar) ? array_key_first($sidebar) : null);
+
 // After $currentItem is set
 if ($currentItem === 'update_user') {
     $file_path = __DIR__ . '/content/users/update_user.php';
-    
     if (file_exists($file_path)) {
         include $file_path;
         exit();
@@ -244,6 +253,7 @@ if ($currentItem === 'update_user') {
         die("Update file not found: " . $file_path);
     }
 }
+
 // Define content based on currentItem
 $content = '';
 if ($currentItem && isset($sidebar[$currentItem])) {
@@ -258,8 +268,8 @@ if ($currentItem && isset($sidebar[$currentItem])) {
 } else {
     $content = 'Welcome to the dashboard';
 }
-
 ?>
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -341,13 +351,13 @@ if ($currentItem && isset($sidebar[$currentItem])) {
                             $file_path = $sidebar[$currentItem]['file_path'];
                             $file_path = trim($file_path, "'\" /\\");                            
                             
-$possible_paths = [
-    __DIR__ . '/' . $file_path,
-    __DIR__ . '/content/users/' . $file_path, // Explicit users path
-    __DIR__ . '/pages/' . $file_path,
-    __DIR__ . '/content/' . $file_path,
-    __DIR__ . '/content/users/update_user.php' // Direct path for AJAX
-];
+                            $possible_paths = [
+                                __DIR__ . '/' . $file_path,
+                                __DIR__ . '/content/users/' . $file_path,
+                                __DIR__ . '/pages/' . $file_path,
+                                __DIR__ . '/content/' . $file_path,
+                                __DIR__ . '/content/users/update_user.php'
+                            ];
 
                             $found = false;
                             foreach ($possible_paths as $path) {

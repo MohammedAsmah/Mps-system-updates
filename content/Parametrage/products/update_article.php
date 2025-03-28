@@ -1,490 +1,382 @@
 <?php
-// Start session without output
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 
-// Prevent accidental output
-ob_start();
+require_once $_SERVER['DOCUMENT_ROOT'] . '/mps_updated_version/db_connect.php';
 
-// Include database connection
-require 'db_connect.php';
-
-// Handle AJAX request (POST)
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    // Ensure we only output JSON
+// Handle AJAX POST request
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && 
+    isset($_SERVER['HTTP_X_REQUESTED_WITH']) && 
+    strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest') {
+    
+    file_put_contents(__DIR__ . '/update_debug.log', date('Y-m-d H:i:s') . " - POST received: " . json_encode($_POST) . "\n", FILE_APPEND);
     ob_clean();
     header('Content-Type: application/json');
-    
-    $articleId = (int)($_POST['id'] ?? 0);
-    if ($articleId < 1) {
-        echo json_encode(['success' => false, 'error' => "ID d'article invalide"]);
-        exit();
-    }
-    
-    $response = ['success' => false, 'error' => null];
-    $changesMade = false;
 
     try {
-        if (!isset($_SESSION['user_id'])) {
-            throw new Exception("Session expirée, veuillez vous reconnecter");
+        if (!isset($_POST['article_id'])) {
+            throw new Exception("ID de l'article manquant");
+        }
+
+        $articleId = (int)$_POST['article_id'];
+
+        if (empty($_POST['designation'])) {
+            throw new Exception("La désignation est obligatoire");
+        }
+        if (empty($_POST['bardoce_p'])) {
+            throw new Exception("Le code-barres P est obligatoire");
         }
 
         $conn->beginTransaction();
 
-        // 1. Process Article Updates
-        $currentArticle = $conn->query("SELECT * FROM Articles WHERE Article_id = $articleId")->fetch();
-        $updateFields = [];
-        $params = [];
+        $checkArticle = $conn->prepare("SELECT COUNT(*) FROM Articles WHERE designation = ? AND Article_id != ?");
+        $checkArticle->execute([$_POST['designation'], $articleId]);
+        if ($checkArticle->fetchColumn() > 0) {
+            $conn->rollBack();
+            echo json_encode(['success' => false, 'error' => "Cette désignation existe déjà"]);
+            exit();
+        }
+
+        $checkBarcode = $conn->prepare("SELECT COUNT(*) FROM Articles WHERE bardoce_p = ? AND Article_id != ?");
+        $checkBarcode->execute([$_POST['bardoce_p'], $articleId]);
+        if ($checkBarcode->fetchColumn() > 0) {
+            $conn->rollBack();
+            echo json_encode(['success' => false, 'error' => "Ce code-barres existe déjà"]);
+            exit();
+        }
+
+        $stmt = $conn->prepare("
+            UPDATE Articles SET
+                designation = ?, conditionnement = ?, palette = ?, tarif = ?, 
+                bardoce_p = ?, barcode_pi = ?, poids_sans_emballage = ?, 
+                poids_avec_emballage = ?, categorie_id = ?
+            WHERE Article_id = ?
+        ");
         
-        $fieldsToCheck = [
-            'designation', 'conditionnement', 'palette', 'tarif',
-            'bardoce_p', 'barcode_pi', 'poids_sans_emballage', 
-            'poids_avec_emballage', 'categorie_id'
-        ];
-        
-        foreach ($fieldsToCheck as $field) {
-            $newValue = $_POST[$field] ?? null;
-            $currentValue = $currentArticle[$field];
-            
-            if (in_array($field, ['tarif', 'poids_sans_emballage', 'poids_avec_emballage'])) {
-                $newValue = (float)$newValue;
-                $currentValue = (float)$currentValue;
+        $stmt->execute([
+            $_POST['designation'],
+            $_POST['conditionnement'] ?? null,
+            $_POST['palette'] ?? null,
+            $_POST['tarif'] ?? 0.00,
+            $_POST['bardoce_p'],
+            $_POST['barcode_pi'] ?? null,
+            $_POST['poids_sans_emballage'] ?? 0.00,
+            $_POST['poids_avec_emballage'] ?? 0.00,
+            $_POST['categorie_id'] ?? null,
+            $articleId
+        ]);
+
+        if (isset($_POST['accessories'])) {
+            $accessoriesData = json_decode($_POST['accessories'], true);
+            if (json_last_error() !== JSON_ERROR_NONE || !is_array($accessoriesData)) {
+                throw new Exception("Format d'accessoires invalide");
             }
-            
-            if ($newValue != $currentValue) {
-                $updateFields[] = "$field = ?";
-                $params[] = $newValue;
-                $changesMade = true;
+
+            $conn->prepare("DELETE FROM ArticleAccessoiries WHERE article_id = ?")->execute([$articleId]);
+            $accessoryStmt = $conn->prepare("
+                INSERT INTO ArticleAccessoiries (article_id, Accessoire_id, quantity)
+                VALUES (?, ?, ?)
+            ");
+
+            foreach ($accessoriesData as $accessory) {
+                if (!isset($accessory['id']) || !isset($accessory['quantity'])) {
+                    throw new Exception("Données d'accessoire incomplètes");
+                }
+                $accessoryStmt->execute([$articleId, (int)$accessory['id'], (int)$accessory['quantity']]);
             }
         }
-        
-        if (!empty($updateFields)) {
-            $sql = "UPDATE Articles SET " . implode(', ', $updateFields) . " WHERE Article_id = ?";
-            $params[] = $articleId;
-            $stmt = $conn->prepare($sql);
-            $stmt->execute($params);
-        }
-
-// Process Accessories
-$accessories = json_decode($_POST['accessories'] ?? '[]', true);
-if (json_last_error() !== JSON_ERROR_NONE) {
-    throw new Exception("Format des accessoires invalide");
-}
-
-// Get current accessories
-$currentAccessories = $conn->query("
-    SELECT Accessoire_id, quantity 
-    FROM ArticleAccessoiries 
-    WHERE article_id = $articleId
-")->fetchAll(PDO::FETCH_ASSOC);
-
-// Convert to comparable format [id => quantity]
-$currentMap = [];
-foreach ($currentAccessories as $acc) {
-    $currentMap[(int)$acc['Accessoire_id']] = (int)$acc['quantity'];
-}
-
-// Prepare new accessories in same format
-$newMap = [];
-foreach ($accessories as $acc) {
-    if (isset($acc['id']) && isset($acc['quantity'])) {
-        $id = (int)$acc['id'];
-        $qty = (int)$acc['quantity'];
-        if ($id > 0) {
-            $newMap[$id] = $qty;
-        }
-    }
-}
-
-// Calculate differences
-$toDelete = array_diff_key($currentMap, $newMap);
-$toUpdate = array_intersect_key(array_diff($newMap, $currentMap), $newMap);
-$toInsert = array_diff_key($newMap, $currentMap);
-
-// Process changes
-if (!empty($toDelete) || !empty($toUpdate) || !empty($toInsert)) {
-    $changesMade = true;
-
-    // Delete removed accessories
-    if (!empty($toDelete)) {
-        $deleteStmt = $conn->prepare("
-            DELETE FROM ArticleAccessoiries 
-            WHERE article_id = ? AND Accessoire_id = ?
-        ");
-        foreach ($toDelete as $id => $_) {
-            $deleteStmt->execute([$articleId, $id]);
-        }
-    }
-
-    // Update existing accessories
-    if (!empty($toUpdate)) {
-        $updateStmt = $conn->prepare("
-            UPDATE ArticleAccessoiries 
-            SET quantity = ? 
-            WHERE article_id = ? AND Accessoire_id = ?
-        ");
-        foreach ($toUpdate as $id => $qty) {
-            $updateStmt->execute([$qty, $articleId, $id]);
-        }
-    }
-
-    // Insert new accessories
-    if (!empty($toInsert)) {
-        $insertStmt = $conn->prepare("
-            INSERT INTO ArticleAccessoiries 
-            (article_id, Accessoire_id, quantity) 
-            VALUES (?, ?, ?)
-        ");
-        foreach ($toInsert as $id => $qty) {
-            $insertStmt->execute([$articleId, $id, $qty]);
-        }
-    }
-}
 
         $conn->commit();
-        
-        $response['success'] = true;
-        $response['message'] = $changesMade 
-            ? "Article mis à jour avec succès" 
-            : "Aucune modification détectée";
+        echo json_encode(['success' => true, 'message' => "Article mis à jour avec succès"]);
+        exit();
 
     } catch (Exception $e) {
         $conn->rollBack();
-        $response['error'] = $e->getMessage();
+        // Log the full error for debugging
+        error_log($e->getMessage());
+        file_put_contents(__DIR__ . '/update_errors.log', date('Y-m-d H:i:s') . " - Error: " . $e->getMessage() . "\n", FILE_APPEND);
+        echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+        exit();
     }
-
-    echo json_encode($response);
-    exit();
 }
 
-// Handle GET request (form display)
-if (isset($_GET['partial']) && $_GET['partial'] == '1') {
-    
-    try {
-        $articleId = (int)($_GET['id'] ?? 0);
-        if ($articleId < 1) {
-            throw new Exception("ID d'article invalide");
-        }
+// GET request to render form
+$articleId = isset($_GET['id']) ? (int)$_GET['id'] : 0;
+if ($articleId === 0) {
+    echo '<div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">ID d\'article requis</div>';
+    exit;
+}
 
-        // Fetch article data
-        $article = $conn->query("
-            SELECT * 
-            FROM Articles 
-            WHERE Article_id = $articleId
-        ")->fetch(PDO::FETCH_ASSOC);
+$article = null;
+$categories = [];
+$accessories = [];
+$articleAccessories = [];
 
-        if (!$article) {
-            throw new Exception("Article non trouvé");
-        }
+try {
+    $stmt = $conn->prepare("SELECT * FROM Articles WHERE Article_id = ?");
+    $stmt->execute([$articleId]);
+    $article = $stmt->fetch(PDO::FETCH_ASSOC);
+    if (!$article) {
+        throw new Exception("Article non trouvé");
+    }
 
-        // Fetch categories
-        $categories = $conn->query("
-            SELECT * 
-            FROM Categories 
-            ORDER BY designation
-        ")->fetchAll(PDO::FETCH_ASSOC);
+    $catStmt = $conn->prepare("SELECT * FROM Categories ORDER BY designation");
+    $catStmt->execute();
+    $categories = $catStmt->fetchAll();
 
-        // Fetch accessories
-        try {
-            $accStmt = $conn->prepare("SELECT Accessoire_id, designation FROM Accessoires ORDER BY designation");
-            $accStmt->execute();
-            $accessories = $accStmt->fetchAll();
+    $accStmt = $conn->prepare("SELECT Accessoire_id, designation FROM Accessoires ORDER BY designation");
+    $accStmt->execute();
+    $accessories = $accStmt->fetchAll();
 
-            // Fetch existing accessories for this article
-            $existingAccStmt = $conn->prepare("
-                SELECT a.Accessoire_id, a.designation, aa.quantity 
-                FROM ArticleAccessoiries aa 
-                JOIN Accessoires a ON aa.Accessoire_id = a.Accessoire_id 
-                WHERE aa.article_id = ?
-            ");
-            $existingAccStmt->execute([$article['Article_id']]);
-            $existingAccessories = $existingAccStmt->fetchAll();
-        } catch (PDOException $e) {
-            $response['error'] = "Erreur de chargement des accessoires: " . $e->getMessage();
-        }
+    $accStmt = $conn->prepare("
+        SELECT a.Accessoire_id, a.designation, aa.quantity
+        FROM ArticleAccessoiries aa
+        JOIN Accessoires a ON aa.Accessoire_id = a.Accessoire_id
+        WHERE aa.article_id = ?
+    ");
+    $accStmt->execute([$articleId]);
+    $articleAccessories = $accStmt->fetchAll();
 
-        // Display form
-        ?>
-        <div class="container mx-auto p-6">
-            <form method="POST" class="bg-white p-6 rounded-lg shadow-lg" id="updateArticleForm">
-                <div class="flex justify-between items-center mb-6">
-                    <h2 class="text-2xl font-bold text-gray-800">
-                        Modifier l'article: <?= htmlspecialchars($article['designation']) ?>
-                    </h2>
-                    <button type="button" onclick="cancelEdit()" class="text-gray-500 hover:text-gray-700">
-                        <i class="fas fa-times"></i>
-                    </button>
-                </div>
+} catch (PDOException $e) {
+    $error = "Erreur: " . $e->getMessage();
+}
+?>
 
-                <input type="hidden" name="id" value="<?= $article['Article_id'] ?>">
-                
-                <!-- Basic Information Section -->
-                <div class="mb-8">
-                    <h3 class="text-lg font-semibold mb-4 pb-2 border-b">Informations de base</h3>
-                    <div class="grid grid-cols-2 gap-6">
-                        <div>
-                            <label class="block text-gray-700 text-sm font-bold mb-2">Désignation *</label>
-                            <input type="text" name="designation" required
-                                class="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400"
-                                value="<?= htmlspecialchars($article['designation']) ?>">
-                        </div>
-
-                        <div>
-                            <label class="block text-gray-700 text-sm font-bold mb-2">Catégorie *</label>
-                            <select name="categorie_id" required
-                                class="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400">
-                                <option value="">Sélectionner une catégorie</option>
-                                <?php foreach ($categories as $category): ?>
-                                    <option value="<?= $category['Categorie_id'] ?>"
-                                        <?= $category['Categorie_id'] == $article['categorie_id'] ? 'selected' : '' ?>>
-                                        <?= htmlspecialchars($category['designation']) ?>
-                                    </option>
-                                <?php endforeach; ?>
-                            </select>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Identification Section -->
-                <div class="mb-8">
-                    <h3 class="text-lg font-semibold mb-4 pb-2 border-b">Identification</h3>
-                    <div class="grid grid-cols-2 gap-6">
-                        <div>
-                            <label class="block text-gray-700 text-sm font-bold mb-2">Code-barres P *</label>
-                            <input type="text" name="bardoce_p" required
-                                class="w-full px-4 py-2 border rounded-lg font-mono focus:outline-none focus:ring-2 focus:ring-blue-400"
-                                value="<?= htmlspecialchars($article['bardoce_p']) ?>">
-                        </div>
-
-                        <div>
-                            <label class="block text-gray-700 text-sm font-bold mb-2">Code-barres PI</label>
-                            <input type="text" name="barcode_pi"
-                                class="w-full px-4 py-2 border rounded-lg font-mono focus:outline-none focus:ring-2 focus:ring-blue-400"
-                                value="<?= htmlspecialchars($article['barcode_pi']) ?>">
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Specifications Section -->
-                <div class="mb-8">
-                    <h3 class="text-lg font-semibold mb-4 pb-2 border-b">Spécifications</h3>
-                    <div class="grid grid-cols-2 gap-6">
-                        <div>
-                            <label class="block text-gray-700 text-sm font-bold mb-2">Conditionnement</label>
-                            <input type="text" name="conditionnement"
-                                class="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400"
-                                value="<?= htmlspecialchars($article['conditionnement']) ?>">
-                        </div>
-
-                        <div>
-                            <label class="block text-gray-700 text-sm font-bold mb-2">Palette</label>
-                            <input type="text" name="palette"
-                                class="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400"
-                                value="<?= htmlspecialchars($article['palette']) ?>">
-                        </div>
-
-                        <div>
-                            <label class="block text-gray-700 text-sm font-bold mb-2">Tarif (€)</label>
-                            <input type="number" step="0.01" name="tarif"
-                                class="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400"
-                                value="<?= number_format($article['tarif'], 2, '.', '') ?>">
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Weights Section -->
-                <div class="mb-8">
-                    <h3 class="text-lg font-semibold mb-4 pb-2 border-b">Poids</h3>
-                    <div class="grid grid-cols-2 gap-6">
-                        <div>
-                            <label class="block text-gray-700 text-sm font-bold mb-2">Poids sans emballage (kg)</label>
-                            <input type="number" step="0.01" name="poids_sans_emballage"
-                                class="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400"
-                                value="<?= number_format($article['poids_sans_emballage'], 2, '.', '') ?>">
-                        </div>
-
-                        <div>
-                            <label class="block text-gray-700 text-sm font-bold mb-2">Poids avec emballage (kg)</label>
-                            <input type="number" step="0.01" name="poids_avec_emballage"
-                                class="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400"
-                                value="<?= number_format($article['poids_avec_emballage'], 2, '.', '') ?>">
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Accessories Section -->
-                <div class="col-span-2 mb-4">
-                    <h3 class="text-lg font-semibold mb-2">Accessoires</h3>
-                    <div class="flex space-x-2 mb-2">
-                        <select id="accessorySelect" class="flex-1 px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-400">
-                            <option value="">Sélectionner un accessoire</option>
-                            <?php foreach ($accessories as $acc): ?>
-                                <option value="<?= $acc['Accessoire_id'] ?>" 
-                                    data-name="<?= htmlspecialchars($acc['designation']) ?>">
-                                    <?= htmlspecialchars($acc['designation']) ?>
-                                </option>
-                            <?php endforeach; ?>
-                        </select>
-                        <input type="number" id="accessoryQuantity" min="1" value="1" class="w-24 px-3 py-2 border rounded">
-                        <button type="button" onclick="addAccessory()" 
-    class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700">
-    Ajouter
-</button>
-                    </div>
-                    <div id="selectedAccessories" class="space-y-2">
-                        <!-- Accessories will be displayed here -->
-                    </div>
-                </div>
-
-                <div class="flex justify-end space-x-4 pt-6 border-t">
-                    <button type="button" onclick="cancelEdit()"
-                        class="px-6 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 font-medium transition-colors duration-200">
-                        Annuler
-                    </button>
-                    <button type="submit" 
-                        class="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium transition-colors duration-200">
-                        Mettre à jour
-                    </button>
-                </div>
-            </form>
+<div class="bg-white p-6 rounded shadow-md" id="updateArticleContainer">
+    <form method="POST" id="updateArticleForm">
+        <div class="flex justify-between items-center mb-4">
+            <h2 class="text-xl font-bold">Modifier l'Article</h2>
+            <button type="button" onclick="window.cancelEdit()" class="text-gray-500 hover:text-gray-700">
+                <i class="fas fa-times"></i>
+            </button>
         </div>
 
-        <script>
-/<script>
-// Initialize selected accessories properly
-document.addEventListener('DOMContentLoaded', function() {
-    // Convert PHP data to JS format
-    window.selectedAccessories = <?= json_encode(array_map(function($acc) {
-        return [
-            'id' => (int)$acc['Accessoire_id'],
-            'name' => $acc['designation'],
-            'quantity' => (int)$acc['quantity']
-        ];
-    }, $existingAccessories)) ?>;
+        <div id="messageContainer" class="mb-4"></div>
 
-    // Ensure array type
-    if (!Array.isArray(window.selectedAccessories)) {
-        window.selectedAccessories = [];
-    }
-    
-    // Initial display
-    window.displayAccessories();
-});
+        <input type="hidden" name="article_id" value="<?= $article['Article_id'] ?>">
 
-// Accessory management functions
-window.addAccessory = function() {
+        <div class="grid grid-cols-2 gap-4">
+            <div class="mb-4">
+                <label class="block text-gray-700 text-sm font-bold mb-2">Désignation *</label>
+                <input type="text" name="designation" required value="<?= htmlspecialchars($article['designation']) ?>"
+                    class="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-400">
+            </div>
+            <div class="mb-4">
+                <label class="block text-gray-700 text-sm font-bold mb-2">Catégorie</label>
+                <select name="categorie_id" class="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-400">
+                    <option value="">Sélectionner une catégorie</option>
+                    <?php foreach ($categories as $category): ?>
+                        <option value="<?= $category['Categorie_id'] ?>" <?= $article['categorie_id'] == $category['Categorie_id'] ? 'selected' : '' ?>>
+                            <?= htmlspecialchars($category['designation']) ?>
+                        </option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            <div class="mb-4">
+                <label class="block text-gray-700 text-sm font-bold mb-2">Code-barres P *</label>
+                <input type="text" name="bardoce_p" required value="<?= htmlspecialchars($article['bardoce_p']) ?>"
+                    class="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-400">
+            </div>
+            <div class="mb-4">
+                <label class="block text-gray-700 text-sm font-bold mb-2">Code-barres PI</label>
+                <input type="text" name="barcode_pi" value="<?= htmlspecialchars($article['barcode_pi'] ?? '') ?>"
+                    class="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-400">
+            </div>
+            <div class="mb-4">
+                <label class="block text-gray-700 text-sm font-bold mb-2">Conditionnement</label>
+                <input type="text" name="conditionnement" value="<?= htmlspecialchars($article['conditionnement'] ?? '') ?>"
+                    class="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-400">
+            </div>
+            <div class="mb-4">
+                <label class="block text-gray-700 text-sm font-bold mb-2">Palette</label>
+                <input type="text" name="palette" value="<?= htmlspecialchars($article['palette'] ?? '') ?>"
+                    class="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-400">
+            </div>
+            <div class="mb-4">
+                <label class="block text-gray-700 text-sm font-bold mb-2">Tarif (€)</label>
+                <input type="number" step="0.01" name="tarif" value="<?= htmlspecialchars($article['tarif'] ?? '0.00') ?>"
+                    class="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-400">
+            </div>
+            <div class="mb-4">
+                <label class="block text-gray-700 text-sm font-bold mb-2">Poids sans emballage (kg)</label>
+                <input type="number" step="0.01" name="poids_sans_emballage" value="<?= htmlspecialchars($article['poids_sans_emballage'] ?? '0.00') ?>"
+                    class="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-400">
+            </div>
+            <div class="mb-4">
+                <label class="block text-gray-700 text-sm font-bold mb-2">Poids avec emballage (kg)</label>
+                <input type="number" step="0.01" name="poids_avec_emballage" value="<?= htmlspecialchars($article['poids_avec_emballage'] ?? '0.00') ?>"
+                    class="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-400">
+            </div>
+            <div class="col-span-2 mb-4">
+                <h3 class="text-lg font-semibold mb-2">Accessoires</h3>
+                <div class="flex space-x-2 mb-2">
+                    <select id="accessorySelect" class="flex-1 px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-400">
+                        <option value="">Sélectionner un accessoire</option>
+                        <?php foreach ($accessories as $accessory): ?>
+                            <option value="<?= $accessory['Accessoire_id'] ?>" data-name="<?= htmlspecialchars($accessory['designation']) ?>">
+                                <?= htmlspecialchars($accessory['designation']) ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                    <input type="number" id="accessoryQuantity" min="1" value="1" 
+                        class="w-24 px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-400"
+                        placeholder="Qté">
+                    <button type="button" onclick="addAccessory()" 
+                        class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700">
+                        Ajouter
+                    </button>
+                </div>
+                <div id="selectedAccessories" class="space-y-2">
+                    <?php foreach ($articleAccessories as $index => $acc): ?>
+                        <div class="flex items-center justify-between p-2 bg-gray-50 rounded border border-gray-200">
+                            <span class="font-medium"><?= htmlspecialchars($acc['designation']) ?></span>
+                            <div class="flex items-center space-x-4">
+                                <span class="text-gray-600">Quantité: <?= $acc['quantity'] ?></span>
+                                <button type="button" onclick="removeAccessory(<?= $index ?>)" 
+                                    class="text-red-600 hover:text-red-800 px-2">
+                                    ×
+                                </button>
+                            </div>
+                        </div>
+                    <?php endforeach; ?>
+                </div>
+            </div>
+        </div>
+
+        <div class="flex justify-end space-x-4 mt-6">
+            <button type="button" onclick="window.cancelEdit()"
+                class="px-4 py-2 text-gray-600 hover:text-gray-800 font-medium">
+                Annuler
+            </button>
+            <button type="submit" 
+                class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 font-medium">
+                Mettre à jour
+            </button>
+        </div>
+    </form>
+
+    <script>
+    window.selectedAccessories = <?php echo json_encode(array_map(function($acc) {
+        return ['id' => $acc['Accessoire_id'], 'name' => $acc['designation'], 'quantity' => $acc['quantity']];
+    }, $articleAccessories)); ?>;
+
+function addAccessory() {
     const select = document.getElementById('accessorySelect');
-    const quantityInput = document.getElementById('accessoryQuantity');
-    const accessoryId = parseInt(select.value);
-    const accessoryName = select.options[select.selectedIndex].dataset.name;
-    const quantity = parseInt(quantityInput.value) || 1;
+    const quantity = document.getElementById('accessoryQuantity');
+    if (!select || !quantity) {
+        console.error('Accessory select or quantity input not found');
+        return;
+    }
+    const accessoryId = select.value; // Remove .trim() as it's unnecessary for select values
+    const selectedOption = select.options[select.selectedIndex];
+    // Ensure data-name is correctly set in the option
+    const accessoryName = selectedOption.getAttribute('data-name') || '';
 
-    if (!accessoryId || isNaN(accessoryId)) {
-        alert('Veuillez sélectionner un accessoire valide');
+    if (!accessoryId) {
+        alert('Veuillez sélectionner un accessoire');
         return;
     }
 
-    // Check if already exists
-    const existingIndex = window.selectedAccessories.findIndex(a => a.id === accessoryId);
-    if (existingIndex >= 0) {
-        window.selectedAccessories[existingIndex].quantity = quantity;
-    } else {
-        window.selectedAccessories.push({
-            id: accessoryId,
-            name: accessoryName,
-            quantity: quantity
-        });
+    const accessory = {
+        id: accessoryId,
+        name: accessoryName,
+        quantity: parseInt(quantity.value, 10) || 1
+    };
+
+    window.selectedAccessories.push(accessory);
+    displayAccessories();
+    select.value = '';
+    quantity.value = '1';
+}
+
+    function removeAccessory(index) {
+        window.selectedAccessories.splice(index, 1);
+        displayAccessories();
     }
 
-    window.displayAccessories();
-    select.value = '';
-    quantityInput.value = '1';
-};
-
-window.removeAccessory = function(index) {
-    window.selectedAccessories.splice(index, 1);
-    window.displayAccessories();
-};
-
-window.displayAccessories = function() {
-    const container = document.getElementById('selectedAccessories');
-    container.innerHTML = window.selectedAccessories.map((acc, index) => `
-        <div class="flex items-center justify-between p-2 bg-gray-50 rounded border border-gray-200">
-            <span class="font-medium">${acc.name}</span>
-            <div class="flex items-center space-x-4">
-                <span class="text-gray-600">Quantité: ${acc.quantity}</span>
-                <button type="button" onclick="removeAccessory(${index})" 
-                    class="text-red-600 hover:text-red-800 px-2">
-                    ×
-                </button>
+    function displayAccessories() {
+        const container = document.getElementById('selectedAccessories');
+        container.innerHTML = window.selectedAccessories.map((acc, index) => `
+            <div class="flex items-center justify-between p-2 bg-gray-50 rounded border border-gray-200">
+                <span class="font-medium">${acc.name}</span>
+                <div class="flex items-center space-x-4">
+                    <span class="text-gray-600">Quantité: ${acc.quantity}</span>
+                    <button type="button" onclick="removeAccessory(${index})" 
+                        class="text-red-600 hover:text-red-800 px-2">
+                        ×
+                    </button>
+                </div>
             </div>
-        </div>
-    `).join('');
-};
+        `).join('');
+    }
 
-// Initialize display when page loads
-document.addEventListener('DOMContentLoaded', function() {
-    window.displayAccessories();
+    function initializeUpdateForm() {
+        const updateArticleForm = document.getElementById('updateArticleForm');
+        const messageContainer = document.getElementById('messageContainer');
+        console.log('Initializing - Form found:', !!updateArticleForm);
+        console.log('Initializing - Message container found:', !!messageContainer);
 
-    // Form submission handler
-    document.getElementById('updateArticleForm').addEventListener('submit', function(e) {
-        e.preventDefault();
-        
-        // Clear previous accessory inputs
-        const existingInputs = document.querySelectorAll('[name^="accessories"]');
-        existingInputs.forEach(input => input.remove());
+        if (!updateArticleForm || !messageContainer) {
+            console.error('Form or message container not found');
+            return;
+        }
 
-        // Initialize selected accessories with proper numeric IDs
-window.selectedAccessories = <?= json_encode(array_map(function($acc) {
-    return [
-        'id' => (int)$acc['Accessoire_id'],
-        'name' => $acc['designation'],
-        'quantity' => (int)$acc['quantity']
-    ];
-}, $existingAccessories)) ?>;
+        function showFormMessage(message, isError = false) {
+            console.log('Showing message:', message, 'Is error:', isError);
+            messageContainer.innerHTML = '';
+            const messageDiv = document.createElement('div');
+            messageDiv.className = isError 
+                ? 'bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded'
+                : 'bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded';
+            messageDiv.innerHTML = message;
+            messageContainer.appendChild(messageDiv);
+        }
 
-// Ensure it's always an array
-if (!Array.isArray(window.selectedAccessories)) {
-    window.selectedAccessories = [];
-}
+        updateArticleForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            const formData = new FormData(this);
+            formData.append('accessories', JSON.stringify(window.selectedAccessories.map(acc => ({
+    id: acc.id,
+    quantity: acc.quantity
+}))));
+            console.log('Submitting:', Object.fromEntries(formData));
 
-        // Submit form
-        const formData = new FormData(this);
-        console.log([...formData.entries()]); 
-        fetch('home.php?section=Parametrage&item=update_article', {
-            method: 'POST',
-            headers: { 'X-Requested-With': 'XMLHttpRequest' },
-            body: formData
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                window.showMessage(data.message || 'Article mis à jour avec succès');
-                setTimeout(() => window.location.reload(), 2000);
-            } else {
-                window.showMessage(data.error || 'Une erreur est survenue', true);
-            }
-        })
-        .catch(error => {
-            window.showMessage('Erreur lors de la mise à jour: ' + error.message, true);
-            console.error('Error:', error);
+            fetch('/mps_updated_version/content/Parametrage/products/update_article.php', {
+                method: 'POST',
+                headers: { 'X-Requested-With': 'XMLHttpRequest' },
+                body: formData
+            })
+            .then(response => {
+                console.log('Response status:', response.status);
+                if (!response.ok) throw new Error('Network response not OK');
+                return response.json();
+            })
+            .then(data => {
+                console.log('Response data:', data);
+                if (data.success) {
+                    showFormMessage(data.message);
+                    setTimeout(() => window.location.reload(), 1500);
+                } else {
+                    showFormMessage(data.error, true);
+                }
+            })
+            .catch(error => {
+                console.error('Fetch error:', error);
+                showFormMessage('Erreur lors de la mise à jour: ' + error.message, true);
+            });
         });
-    });
-});
-</script>
-<?php
+        window.selectedAccessories = <?php 
+    echo json_encode(array_map(function($acc) {
+        return [
+            'id' => (string)$acc['Accessoire_id'], // Ensure ID is a string if needed
+            'name' => $acc['designation'],
+            'quantity' => (int)$acc['quantity']
+        ];
+    }, $articleAccessories)); 
+?>;
+    }
 
-} catch (Exception $e) {
-    echo "<div class='text-red-500 p-4'>Erreur: " . htmlspecialchars($e->getMessage()) . "</div>";
-}
-
-exit();
-}
-
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-echo json_encode(['success' => false, 'error' => 'Données manquantes']);
-} else {
-header('Location: liste_articles.php');
-}
-exit();
+    initializeUpdateForm();
+    </script>
+</div>
